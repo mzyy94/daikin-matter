@@ -1,5 +1,6 @@
 use super::property::Item;
 use super::response::DaikinResponse;
+use alloc::string::String;
 use serde::{Deserialize, Deserializer, de};
 
 #[derive(Deserialize, Debug, Clone)]

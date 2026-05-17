@@ -1,3 +1,6 @@
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
 use core::ops::RangeInclusive;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -330,7 +333,7 @@ impl BinaryStep {
         let step = self.step;
         let step_base = f32::from(step & 0xf);
         let exp: i8 = (step & 0xf0) as i8 >> 4;
-        let step_coefficient = 10.0_f32.powi(exp as i32);
+        let step_coefficient = libm::powf(10.0, exp as f32);
         step_base * step_coefficient
     }
 

@@ -3,6 +3,10 @@
 //! This crate provides protocol-agnostic abstractions for HVAC control,
 //! with specific implementations for Daikin devices.
 
+#![cfg_attr(not(feature = "std"), no_std)]
+
+extern crate alloc;
+
 pub mod constraints;
 pub mod mapping;
 pub mod protocol;

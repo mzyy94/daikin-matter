@@ -10,7 +10,7 @@ macro_rules! set_child_prop {
                     *value = $item.value;
                 } else {
                     let pp = crate::protocol::property::Property::Node(crate::protocol::property::Item {
-                        name: $item.name.to_string(),
+                        name: $item.name.clone(),
                         type_: $item.type_,
                         value: $item.value,
                         metadata: crate::protocol::property::Metadata::Undefined,
@@ -52,7 +52,7 @@ macro_rules! get_child_prop {
                 }
             },
             _ => crate::protocol::property::Item {
-                name: String::new(),
+                name: alloc::string::String::new(),
                 type_: crate::protocol::property::PropertyType::ReadOnly,
                 value: crate::protocol::property::PropValue::Null,
                 metadata: crate::protocol::property::Metadata::Undefined,

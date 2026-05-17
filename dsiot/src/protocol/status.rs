@@ -2,6 +2,7 @@ use super::property::{Item, Property};
 use super::request::{DaikinRequest, Request};
 use super::response::DaikinResponse;
 use crate::types::{AutoModeWindSpeed, HorizontalDirection, Mode, VerticalDirection, WindSpeed};
+use alloc::vec;
 
 /// Sensor readings from the device (read-only values).
 #[derive(Clone, Debug, PartialEq)]
