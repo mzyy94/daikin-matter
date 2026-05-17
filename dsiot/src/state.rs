@@ -43,8 +43,8 @@ pub enum StateTransitionError {
     UnknownCurrentState,
 }
 
-impl std::fmt::Display for StateTransitionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for StateTransitionError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::InvalidMode => write!(f, "Invalid mode value"),
             Self::UnknownCurrentState => write!(f, "Cannot determine current device state"),
@@ -52,7 +52,7 @@ impl std::fmt::Display for StateTransitionError {
     }
 }
 
-impl std::error::Error for StateTransitionError {}
+impl core::error::Error for StateTransitionError {}
 
 /// High-level device state combining power and mode.
 #[derive(Debug, Clone, PartialEq, Eq)]

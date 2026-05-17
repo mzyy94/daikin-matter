@@ -51,7 +51,7 @@ impl ValueConstraints {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::property::BinaryStep;
+    use crate::protocol::property::BinaryStep;
 
     #[test]
     fn test_from_metadata_with_step() {
@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn test_from_metadata_without_step() {
-        use crate::property::BinaryEnum;
+        use crate::protocol::property::BinaryEnum;
         let metadata = Metadata::Binary(Binary::Enum(BinaryEnum {
             max: "FF".to_string(),
         }));

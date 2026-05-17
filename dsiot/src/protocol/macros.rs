@@ -14,7 +14,7 @@ macro_rules! set_child_prop {
                         type_: $item.type_,
                         value: $item.value,
                         metadata: crate::protocol::property::Metadata::Undefined,
-                        phantom: std::marker::PhantomData,
+                        phantom: core::marker::PhantomData,
                     });
                     children.push(pp);
                 }
@@ -48,7 +48,7 @@ macro_rules! get_child_prop {
                     type_: item.type_,
                     value: item.value.clone(),
                     metadata: item.metadata.clone(),
-                    phantom: std::marker::PhantomData,
+                    phantom: core::marker::PhantomData,
                 }
             },
             _ => crate::protocol::property::Item {
@@ -56,7 +56,7 @@ macro_rules! get_child_prop {
                 type_: crate::protocol::property::PropertyType::ReadOnly,
                 value: crate::protocol::property::PropValue::Null,
                 metadata: crate::protocol::property::Metadata::Undefined,
-                phantom: std::marker::PhantomData,
+                phantom: core::marker::PhantomData,
             }
         }
     };
@@ -110,12 +110,12 @@ mod tests {
     fn set_child_prop() {
         let item: Item<f32> = Item {
             name: "p_03".into(),
-            type_: crate::property::PropertyType::ReadWrite,
+            type_: crate::protocol::property::PropertyType::ReadWrite,
             value: PropValue::String("3800".into()),
-            metadata: crate::property::Metadata::Undefined,
-            phantom: std::marker::PhantomData,
+            metadata: crate::protocol::property::Metadata::Undefined,
+            phantom: core::marker::PhantomData,
         };
-        let mut prop = crate::property::Property::new_tree("dgc_status");
+        let mut prop = crate::protocol::property::Property::new_tree("dgc_status");
 
         set_child_prop!({ prop }.e_1002.e_A001.p_03 = item);
 

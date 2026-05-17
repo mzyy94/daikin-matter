@@ -31,8 +31,8 @@ pub enum TemperatureError {
     UnknownMode,
 }
 
-impl std::fmt::Display for TemperatureError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for TemperatureError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::ModeMismatch {
                 expected_mode,
@@ -49,7 +49,7 @@ impl std::fmt::Display for TemperatureError {
     }
 }
 
-impl std::error::Error for TemperatureError {}
+impl core::error::Error for TemperatureError {}
 
 impl TemperatureTarget {
     /// Create a heating temperature target.

@@ -35,7 +35,7 @@ pub struct Item<T: Sized + DeserializeOwned + Into<f32> = f32> {
     #[serde(skip_serializing, rename = "md")]
     pub metadata: Metadata,
     #[serde(skip)]
-    pub phantom: std::marker::PhantomData<fn() -> T>,
+    pub phantom: core::marker::PhantomData<fn() -> T>,
 }
 
 impl<T: Sized + DeserializeOwned + Into<f32>> PartialEq for Item<T> {
@@ -44,8 +44,8 @@ impl<T: Sized + DeserializeOwned + Into<f32>> PartialEq for Item<T> {
     }
 }
 
-impl<T: Sized + DeserializeOwned + Into<f32>> std::fmt::Debug for Item<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: Sized + DeserializeOwned + Into<f32>> core::fmt::Debug for Item<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Item {{ name: {:?}, ", self.name)?;
         match &self.metadata {
             Metadata::Binary(Binary::Step(..)) => {
@@ -309,8 +309,8 @@ impl BinaryEnum {
     }
 }
 
-impl std::fmt::Debug for BinaryEnum {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for BinaryEnum {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "BinaryEnum {{ allowed: {:?} }}", self.allowed_values())
     }
 }
@@ -343,8 +343,8 @@ impl BinaryStep {
     }
 }
 
-impl std::fmt::Debug for BinaryStep {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for BinaryStep {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
             "BinaryStep {{ range: {:?}, step: {} }}",
