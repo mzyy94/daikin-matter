@@ -55,7 +55,7 @@ use rs_matter::{MATTER_PORT, Matter};
 use bridge::{BridgeHandler, BridgedMatcher};
 
 static MATTER: StaticCell<Matter> = StaticCell::new();
-static BUFFERS: StaticCell<PooledBuffers<10, IMBuffer>> = StaticCell::new();
+static BUFFERS: StaticCell<PooledBuffers<32, IMBuffer>> = StaticCell::new();
 static SUBSCRIPTIONS: StaticCell<Subscriptions> = StaticCell::new();
 static KV_BUF: StaticCell<[u8; 4096]> = StaticCell::new();
 
@@ -359,7 +359,7 @@ fn run_matter(
     );
 
     let responder = DefaultResponder::new(&dm);
-    let mut respond = pin!(responder.run::<8, 4>());
+    let mut respond = pin!(responder.run::<16, 4>());
     let mut dm_job = pin!(dm.run());
 
     let socket = async_io::Async::<UdpSocket>::bind(MATTER_SOCKET_BIND_ADDR)?;
