@@ -78,8 +78,12 @@ const BRIDGED_EP_POWER: Endpoint<'static> = Endpoint {
 };
 
 pub(crate) fn build_node(devices: &[(u16, bool)]) -> Node<'static> {
+    let mut sorted = devices.to_vec();
+    sorted.sort_by_key(|(id, _)| *id);
+    sorted.dedup_by_key(|(id, _)| *id);
+
     let mut endpoints = vec![ROOT_EP, AGGREGATOR_EP];
-    for &(id, has_power) in devices {
+    for (id, has_power) in sorted {
         let template = if has_power {
             BRIDGED_EP_POWER
         } else {
