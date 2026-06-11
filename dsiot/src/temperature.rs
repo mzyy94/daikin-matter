@@ -3,6 +3,7 @@
 //! This module provides type-safe temperature handling that ensures
 //! temperatures are applied correctly based on the current operating mode.
 
+use crate::protocol::property::SetValueError;
 use crate::protocol::status::DaikinStatus;
 use crate::types::Mode;
 
@@ -29,6 +30,8 @@ pub enum TemperatureError {
     },
     /// Cannot determine current mode.
     UnknownMode,
+    /// Failed to write a value to the status.
+    SetValue(SetValueError),
 }
 
 impl core::fmt::Display for TemperatureError {
@@ -45,11 +48,18 @@ impl core::fmt::Display for TemperatureError {
                 )
             }
             Self::UnknownMode => write!(f, "Cannot determine current operating mode"),
+            Self::SetValue(e) => write!(f, "{e}"),
         }
     }
 }
 
 impl core::error::Error for TemperatureError {}
+
+impl From<SetValueError> for TemperatureError {
+    fn from(e: SetValueError) -> Self {
+        Self::SetValue(e)
+    }
+}
 
 impl TemperatureTarget {
     /// Create a heating temperature target.
@@ -95,20 +105,12 @@ impl TemperatureTarget {
     ///
     /// This method applies the temperature regardless of mode validation.
     /// Use `apply_validated` if you want mode checking.
-    pub fn apply_to_status(&self, status: &mut DaikinStatus) {
+    pub fn apply_to_status(&self, status: &mut DaikinStatus) -> Result<(), SetValueError> {
         match self {
-            Self::Heating(temp) => {
-                status.temperature.heating.set_value(*temp);
-            }
-            Self::Cooling(temp) => {
-                status.temperature.cooling.set_value(*temp);
-            }
-            Self::Auto(offset) => {
-                status.temperature.automatic.set_value(*offset);
-            }
-            Self::None => {
-                // No temperature to set
-            }
+            Self::Heating(temp) => status.temperature.heating.set_value(*temp),
+            Self::Cooling(temp) => status.temperature.cooling.set_value(*temp),
+            Self::Auto(offset) => status.temperature.automatic.set_value(*offset),
+            Self::None => Ok(()),
         }
     }
 
@@ -128,7 +130,7 @@ impl TemperatureTarget {
             });
         }
 
-        self.apply_to_status(status);
+        self.apply_to_status(status)?;
         Ok(())
     }
 

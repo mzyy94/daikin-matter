@@ -20,3 +20,18 @@ impl From<Mode> for f32 {
         val as u8 as f32
     }
 }
+
+impl TryFrom<u8> for Mode {
+    type Error = ();
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v {
+            0 => Ok(Mode::Fan),
+            1 => Ok(Mode::Heating),
+            2 => Ok(Mode::Cooling),
+            3 => Ok(Mode::Auto),
+            5 => Ok(Mode::Dehumidify),
+            255 => Ok(Mode::Unknown),
+            _ => Err(()),
+        }
+    }
+}

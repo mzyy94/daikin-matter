@@ -21,6 +21,6 @@ pub use types::{AutoModeWindSpeed, HorizontalDirection, Mode, VerticalDirection,
 
 pub use protocol::{
     AutoModeWindSettings, Binary, BinaryEnum, BinaryStep, DaikinInfo, DaikinRequest,
-    DaikinResponse, DaikinStatus, Item, Metadata, ModeWindSettings, PropValue, Property,
-    SensorReadings, TemperatureSettings, WindSettings,
+    DaikinResponse, DaikinStatus, Item, Metadata, ModeWindSettings, PropTag, PropValue, Property,
+    SensorReadings, SetValueError, TemperatureSettings, WindSettings,
 };

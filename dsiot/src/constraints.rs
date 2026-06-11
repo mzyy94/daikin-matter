@@ -4,8 +4,7 @@
 //! from Daikin's binary protocol metadata, enabling protocol-agnostic
 //! constraint propagation to smart home platforms.
 
-use crate::protocol::property::{Binary, Item, Metadata};
-use serde::de::DeserializeOwned;
+use crate::protocol::property::{Binary, Item, Metadata, PropTag};
 
 /// Value constraints for a numeric property.
 #[derive(Debug, Clone, PartialEq)]
@@ -43,7 +42,7 @@ impl ValueConstraints {
     }
 
     /// Extract constraints from an Item.
-    pub fn from_item<T: Sized + DeserializeOwned + Into<f32>>(item: &Item<T>) -> Option<Self> {
+    pub fn from_item<T: PropTag>(item: &Item<T>) -> Option<Self> {
         Self::from_metadata(&item.metadata)
     }
 }

@@ -1,4 +1,7 @@
-use dsiot::{DaikinStatus, Mode, PowerState, StateTransition, TemperatureTarget, ValueConstraints};
+use dsiot::{
+    DaikinStatus, Mode, PowerState, SetValueError, StateTransition, TemperatureTarget,
+    ValueConstraints,
+};
 use rs_matter::dm::clusters::decl::thermostat;
 use rs_matter::dm::{Cluster, Dataver, InvokeContext, ReadContext, WriteContext};
 use rs_matter::error::{Error, ErrorCode};
@@ -6,6 +9,12 @@ use rs_matter::tlv::{Nullable, TLVBuilderParent};
 use rs_matter::with;
 
 use crate::device::Device;
+
+/// Map a value-write failure to a Matter error.
+fn set_err(e: SetValueError) -> Error {
+    warn!("Failed to apply temperature: {e}");
+    Error::from(ErrorCode::InvalidState)
+}
 
 pub struct ThermostatHandler {
     pub(crate) dataver: Dataver,
@@ -171,7 +180,9 @@ impl thermostat::ClusterHandler for ThermostatHandler {
             Some(c) => validate_temp(temp, &c)?,
             None => temp,
         };
-        TemperatureTarget::cooling(temp).apply_to_status(&mut status);
+        TemperatureTarget::cooling(temp)
+            .apply_to_status(&mut status)
+            .map_err(set_err)?;
         debug!("Thermostat: cooling setpoint → {temp}°C");
         self.update(status)?;
         self.dataver.changed();
@@ -197,7 +208,9 @@ impl thermostat::ClusterHandler for ThermostatHandler {
             Some(c) => validate_temp(temp, &c)?,
             None => temp,
         };
-        TemperatureTarget::heating(temp).apply_to_status(&mut status);
+        TemperatureTarget::heating(temp)
+            .apply_to_status(&mut status)
+            .map_err(set_err)?;
         debug!("Thermostat: heating setpoint → {temp}°C");
         self.update(status)?;
         self.dataver.changed();
@@ -309,7 +322,9 @@ impl thermostat::ClusterHandler for ThermostatHandler {
                 Some(c) => validate_temp(new_temp, &c)?,
                 None => new_temp,
             };
-            TemperatureTarget::cooling(new_temp).apply_to_status(&mut status);
+            TemperatureTarget::cooling(new_temp)
+                .apply_to_status(&mut status)
+                .map_err(set_err)?;
         }
         if matches!(
             mode,
@@ -321,7 +336,9 @@ impl thermostat::ClusterHandler for ThermostatHandler {
                 Some(c) => validate_temp(new_temp, &c)?,
                 None => new_temp,
             };
-            TemperatureTarget::heating(new_temp).apply_to_status(&mut status);
+            TemperatureTarget::heating(new_temp)
+                .apply_to_status(&mut status)
+                .map_err(set_err)?;
         }
 
         debug!(

@@ -27,8 +27,38 @@ pub enum Property {
     Node(Item),
 }
 
+/// Sealed numeric tag for a property value.
+///
+/// Implemented for `f32` and the protocol enums. Collapses the repeated
+/// `DeserializeOwned + Into<f32>` bounds that `Item<T>` would otherwise spell out
+/// at every impl site.
+pub trait PropTag: DeserializeOwned + Into<f32> {}
+impl PropTag for f32 {}
+impl PropTag for crate::types::Mode {}
+impl PropTag for crate::types::WindSpeed {}
+impl PropTag for crate::types::AutoModeWindSpeed {}
+impl PropTag for crate::types::VerticalDirection {}
+impl PropTag for crate::types::HorizontalDirection {}
+
+/// Error returned by [`Item::set_value`] when the property metadata cannot hold a
+/// numeric value (e.g. plain string properties).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SetValueError {
+    UnsupportedMetadata,
+}
+
+impl core::fmt::Display for SetValueError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::UnsupportedMetadata => write!(f, "metadata does not support a numeric value"),
+        }
+    }
+}
+
+impl core::error::Error for SetValueError {}
+
 #[derive(Serialize, Deserialize, Clone)]
-pub struct Item<T: Sized + DeserializeOwned + Into<f32> = f32> {
+pub struct Item<T: PropTag = f32> {
     #[serde(rename = "pn")]
     pub name: String,
     #[serde(skip_serializing, rename = "pt")]
@@ -41,13 +71,13 @@ pub struct Item<T: Sized + DeserializeOwned + Into<f32> = f32> {
     pub phantom: core::marker::PhantomData<fn() -> T>,
 }
 
-impl<T: Sized + DeserializeOwned + Into<f32>> PartialEq for Item<T> {
+impl<T: PropTag> PartialEq for Item<T> {
     fn eq(&self, other: &Self) -> bool {
         self.value == other.value
     }
 }
 
-impl<T: Sized + DeserializeOwned + Into<f32>> core::fmt::Debug for Item<T> {
+impl<T: PropTag> core::fmt::Debug for Item<T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Item {{ name: {:?}, ", self.name)?;
         match &self.metadata {
@@ -63,7 +93,7 @@ impl<T: Sized + DeserializeOwned + Into<f32>> core::fmt::Debug for Item<T> {
             }
             Metadata::Binary(Binary::Enum(_)) => {
                 if let PropValue::String(pv) = &self.value {
-                    write!(f, "value: {:?}", hex2int(pv))
+                    write!(f, "value: {:?}", hex2int(pv).unwrap_or(0))
                 } else {
                     write!(f, "value: {:?}", self.value)
                 }
@@ -76,17 +106,15 @@ impl<T: Sized + DeserializeOwned + Into<f32>> core::fmt::Debug for Item<T> {
     }
 }
 
-fn hex2int(hex: &str) -> i32 {
-    let Ok(bytes) = hex::decode(hex) else {
-        return 0;
-    };
-    match bytes.len() {
+fn hex2int(hex: &str) -> Option<i32> {
+    let bytes = hex::decode(hex).ok()?;
+    Some(match bytes.len() {
         1 => i8::from_le_bytes([bytes[0]]) as i32,
         2 => i16::from_le_bytes([bytes[0], bytes[1]]) as i32,
         3 => i32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0]),
         4 => i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-        _ => 0,
-    }
+        _ => return None,
+    })
 }
 
 impl Property {
@@ -131,7 +159,7 @@ impl Property {
     }
 }
 
-impl<T: Sized + DeserializeOwned + Into<f32>> Item<T> {
+impl<T: PropTag> Item<T> {
     pub fn get_f32(&self) -> Option<f32> {
         match self {
             Item {
@@ -139,7 +167,7 @@ impl<T: Sized + DeserializeOwned + Into<f32>> Item<T> {
                 metadata: Metadata::Binary(Binary::Step(step)),
                 ..
             } => {
-                let value = hex2int(pv) as f32;
+                let value = hex2int(pv)? as f32;
                 let step = step.step();
                 Some(value * step)
             }
@@ -147,21 +175,26 @@ impl<T: Sized + DeserializeOwned + Into<f32>> Item<T> {
         }
     }
 
-    pub fn set_value(&mut self, value: T) {
+    pub fn set_value(&mut self, value: T) -> Result<(), SetValueError> {
         match &self.metadata {
-            Metadata::Integer => self.value = PropValue::Integer(value.into() as i32),
-            Metadata::String => {} // String metadata does not support numeric value conversion
+            Metadata::Integer => {
+                self.value = PropValue::Integer(value.into() as i32);
+                Ok(())
+            }
             Metadata::Binary(Binary::Step(step)) => {
                 let value = (value.into() / step.step()) as i64;
                 let bytes = value.to_le_bytes();
                 self.value = PropValue::String(hex::encode(&bytes[..(step.max.len() / 2)]));
+                Ok(())
             }
             Metadata::Binary(Binary::Enum(e)) => {
                 let value = value.into() as i64;
                 let bytes = value.to_le_bytes();
                 self.value = PropValue::String(hex::encode(&bytes[..(e.max.len() / 2)]));
+                Ok(())
             }
-            _ => self.value = PropValue::Null,
+            // String / Object / list / undefined metadata cannot hold a numeric value.
+            _ => Err(SetValueError::UnsupportedMetadata),
         }
     }
 
@@ -176,17 +209,16 @@ impl<T: Sized + DeserializeOwned + Into<f32>> Item<T> {
         }
     }
 
-    pub fn get_enum(&self) -> Option<T> {
+    pub fn get_enum(&self) -> Option<T>
+    where
+        T: TryFrom<u8>,
+    {
         match self {
             Item {
                 value: PropValue::String(pv),
                 metadata: Metadata::Binary(Binary::Enum(_)),
                 ..
-            } => {
-                let value = hex2int(pv);
-                serde_json::from_value(serde_json::Value::Number(serde_json::Number::from(value)))
-                    .ok()
-            }
+            } => T::try_from(hex2int(pv)? as u8).ok(),
             _ => None,
         }
     }
@@ -340,8 +372,8 @@ impl BinaryStep {
     pub fn range(&self) -> RangeInclusive<f32> {
         let BinaryStep { min, max, step } = self;
         let step = if *step == 0 { 1.0 } else { self.step() };
-        let min_value = hex2int(min) as f32 * step;
-        let max_value = hex2int(max) as f32 * step;
+        let min_value = hex2int(min).unwrap_or(0) as f32 * step;
+        let max_value = hex2int(max).unwrap_or(0) as f32 * step;
         RangeInclusive::new(min_value, max_value)
     }
 }
@@ -367,13 +399,15 @@ mod tests {
     fn test_hex2int() {
         let hex = "18".to_string();
         let result = hex2int(&hex);
-        assert_eq!(result, 24);
+        assert_eq!(result, Some(24));
         let hex = "eeff".to_string();
         let result = hex2int(&hex);
-        assert_eq!(result, -18);
+        assert_eq!(result, Some(-18));
         let hex = "12345600".to_string();
         let result = hex2int(&hex);
-        assert_eq!(result, 5649426);
+        assert_eq!(result, Some(5649426));
+        // Invalid hex returns None instead of silently yielding 0.
+        assert_eq!(hex2int("zz"), None);
     }
 
     #[test]

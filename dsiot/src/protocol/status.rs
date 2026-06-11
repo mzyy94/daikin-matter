@@ -225,27 +225,39 @@ mod tests {
             .expect("Invalid JSON file.");
         let mut status: DaikinStatus = res.into();
 
-        status.power.set_value(1.0);
-        status.mode.set_value(Mode::Cooling);
-        status.temperature.cooling.set_value(24.5);
-        status.temperature.heating.set_value(25.0);
-        status.temperature.automatic.set_value(0.0);
+        status.power.set_value(1.0).unwrap();
+        status.mode.set_value(Mode::Cooling).unwrap();
+        status.temperature.cooling.set_value(24.5).unwrap();
+        status.temperature.heating.set_value(25.0).unwrap();
+        status.temperature.automatic.set_value(0.0).unwrap();
 
         // Cooling wind settings
-        status.wind.cooling.speed.set_value(WindSpeed::Lev4);
+        status
+            .wind
+            .cooling
+            .speed
+            .set_value(WindSpeed::Lev4)
+            .unwrap();
         status
             .wind
             .cooling
             .vertical_direction
-            .set_value(VerticalDirection::BottomMost);
+            .set_value(VerticalDirection::BottomMost)
+            .unwrap();
         status
             .wind
             .cooling
             .horizontal_direction
-            .set_value(HorizontalDirection::RightCenter);
+            .set_value(HorizontalDirection::RightCenter)
+            .unwrap();
 
         // Auto mode wind settings
-        status.wind.auto.speed.set_value(AutoModeWindSpeed::Silent);
+        status
+            .wind
+            .auto
+            .speed
+            .set_value(AutoModeWindSpeed::Silent)
+            .unwrap();
 
         let _req: DaikinRequest = status.into();
         // Note: update.json fixture needs to be updated for new structure

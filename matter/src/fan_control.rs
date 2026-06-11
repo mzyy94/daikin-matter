@@ -1,7 +1,7 @@
 use dsiot::mapping::fan::{self, FanSpeed};
 use dsiot::{
-    AutoModeWindSpeed, DaikinStatus, HorizontalDirection, Mode, PowerState, StateTransition,
-    VerticalDirection, WindSpeed,
+    AutoModeWindSpeed, DaikinStatus, HorizontalDirection, Mode, PowerState, SetValueError,
+    StateTransition, VerticalDirection, WindSpeed,
 };
 use rs_matter::dm::clusters::decl::fan_control;
 use rs_matter::dm::{Cluster, Dataver, InvokeContext, ReadContext, WriteContext};
@@ -113,8 +113,14 @@ fn wind_speed_to_fan_mode(speed: WindSpeed, is_off: bool) -> fan_control::FanMod
     }
 }
 
+/// Map a value-write failure to a Matter error.
+fn set_err(e: SetValueError) -> Error {
+    warn!("Failed to apply wind setting: {e}");
+    Error::from(ErrorCode::InvalidState)
+}
+
 /// Apply wind speed to the current mode's wind settings.
-fn apply_wind_speed(status: &mut DaikinStatus, speed: WindSpeed) {
+fn apply_wind_speed(status: &mut DaikinStatus, speed: WindSpeed) -> Result<(), SetValueError> {
     let mode = status.mode.get_enum().unwrap_or(Mode::Auto);
     match mode {
         Mode::Cooling => status.wind.cooling.speed.set_value(speed),
@@ -125,10 +131,10 @@ fn apply_wind_speed(status: &mut DaikinStatus, speed: WindSpeed) {
                 percent: wind_speed_to_setting(speed) * 20,
                 auto: speed == WindSpeed::Auto,
             });
-            status.wind.auto.speed.set_value(auto_speed);
+            status.wind.auto.speed.set_value(auto_speed)
         }
         Mode::Fan => status.wind.fan.speed.set_value(speed),
-        _ => {}
+        _ => Ok(()),
     }
 }
 
@@ -167,46 +173,46 @@ fn apply_directions(
     status: &mut DaikinStatus,
     vertical: VerticalDirection,
     horizontal: HorizontalDirection,
-) {
+) -> Result<(), SetValueError> {
     let mode = status.mode.get_enum().unwrap_or(Mode::Auto);
     match mode {
         Mode::Cooling => {
-            status.wind.cooling.vertical_direction.set_value(vertical);
+            status.wind.cooling.vertical_direction.set_value(vertical)?;
             status
                 .wind
                 .cooling
                 .horizontal_direction
-                .set_value(horizontal);
+                .set_value(horizontal)
         }
         Mode::Heating => {
-            status.wind.heating.vertical_direction.set_value(vertical);
+            status.wind.heating.vertical_direction.set_value(vertical)?;
             status
                 .wind
                 .heating
                 .horizontal_direction
-                .set_value(horizontal);
+                .set_value(horizontal)
         }
         Mode::Dehumidify => {
             status
                 .wind
                 .dehumidify
                 .vertical_direction
-                .set_value(vertical);
+                .set_value(vertical)?;
             status
                 .wind
                 .dehumidify
                 .horizontal_direction
-                .set_value(horizontal);
+                .set_value(horizontal)
         }
         Mode::Auto => {
-            status.wind.auto.vertical_direction.set_value(vertical);
-            status.wind.auto.horizontal_direction.set_value(horizontal);
+            status.wind.auto.vertical_direction.set_value(vertical)?;
+            status.wind.auto.horizontal_direction.set_value(horizontal)
         }
         Mode::Fan => {
-            status.wind.fan.vertical_direction.set_value(vertical);
-            status.wind.fan.horizontal_direction.set_value(horizontal);
+            status.wind.fan.vertical_direction.set_value(vertical)?;
+            status.wind.fan.horizontal_direction.set_value(horizontal)
         }
-        _ => {}
+        _ => Ok(()),
     }
 }
 
@@ -333,7 +339,7 @@ impl fan_control::ClusterHandler for FanControlHandler {
             fan_control::FanModeEnum::Auto | fan_control::FanModeEnum::Smart => WindSpeed::Auto,
         };
         let mut status = self.get_status()?;
-        apply_wind_speed(&mut status, speed);
+        apply_wind_speed(&mut status, speed).map_err(set_err)?;
         debug!("FanControl: fan_mode → {:?}", value);
         self.update(status)?;
         self.dataver.changed();
@@ -354,7 +360,7 @@ impl fan_control::ClusterHandler for FanControlHandler {
             }),
         };
         let mut status = self.get_status()?;
-        apply_wind_speed(&mut status, speed);
+        apply_wind_speed(&mut status, speed).map_err(set_err)?;
         debug!("FanControl: percent_setting → {:?}", opt);
         self.update(status)?;
         self.dataver.changed();
@@ -368,7 +374,7 @@ impl fan_control::ClusterHandler for FanControlHandler {
             Some(s) => setting_to_wind_speed(s),
         };
         let mut status = self.get_status()?;
-        apply_wind_speed(&mut status, speed);
+        apply_wind_speed(&mut status, speed).map_err(set_err)?;
         debug!("FanControl: speed_setting → {:?}", opt);
         self.update(status)?;
         self.dataver.changed();
@@ -391,7 +397,7 @@ impl fan_control::ClusterHandler for FanControlHandler {
             HorizontalDirection::Auto
         };
         let mut status = self.get_status()?;
-        apply_directions(&mut status, vertical, horizontal);
+        apply_directions(&mut status, vertical, horizontal).map_err(set_err)?;
         debug!("FanControl: rock_setting → {:?}", value);
         self.update(status)?;
         self.dataver.changed();
@@ -405,7 +411,7 @@ impl fan_control::ClusterHandler for FanControlHandler {
     ) -> Result<(), Error> {
         let mut status = self.get_status()?;
         if value.contains(fan_control::WindBitmap::SLEEP_WIND) {
-            apply_wind_speed(&mut status, WindSpeed::Silent);
+            apply_wind_speed(&mut status, WindSpeed::Silent).map_err(set_err)?;
         }
         let is_fan_mode = status.mode.get_enum() == Some(Mode::Fan);
         let sleep = value.contains(fan_control::WindBitmap::SLEEP_WIND);
@@ -415,8 +421,9 @@ impl fan_control::ClusterHandler for FanControlHandler {
                 &mut status,
                 VerticalDirection::Nice,
                 horiz.unwrap_or(HorizontalDirection::Auto),
-            );
-            apply_wind_speed(&mut status, WindSpeed::Auto);
+            )
+            .map_err(set_err)?;
+            apply_wind_speed(&mut status, WindSpeed::Auto).map_err(set_err)?;
         } else {
             // Clear Nice direction when NATURAL_WIND is off
             let (vert, horiz) = current_directions(&status);
@@ -425,14 +432,15 @@ impl fan_control::ClusterHandler for FanControlHandler {
                     &mut status,
                     VerticalDirection::Auto,
                     horiz.unwrap_or(HorizontalDirection::Auto),
-                );
+                )
+                .map_err(set_err)?;
             }
         }
         if !value.contains(fan_control::WindBitmap::SLEEP_WIND) {
             // Clear Silent speed when SLEEP_WIND is off
             let speed = current_wind_speed(&status).unwrap_or(WindSpeed::Auto);
             if speed == WindSpeed::Silent {
-                apply_wind_speed(&mut status, WindSpeed::Auto);
+                apply_wind_speed(&mut status, WindSpeed::Auto).map_err(set_err)?;
             }
         }
         debug!("FanControl: wind_setting → {:?}", value);

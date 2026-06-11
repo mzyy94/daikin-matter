@@ -3,6 +3,7 @@
 //! This module provides type-safe state transitions for power and mode control,
 //! ensuring invalid state combinations are prevented at compile time or runtime.
 
+use crate::protocol::property::SetValueError;
 use crate::protocol::status::DaikinStatus;
 use crate::types::Mode;
 
@@ -41,6 +42,8 @@ pub enum StateTransitionError {
     InvalidMode,
     /// Cannot determine current state.
     UnknownCurrentState,
+    /// Failed to write a value to the status.
+    SetValue(SetValueError),
 }
 
 impl core::fmt::Display for StateTransitionError {
@@ -48,11 +51,18 @@ impl core::fmt::Display for StateTransitionError {
         match self {
             Self::InvalidMode => write!(f, "Invalid mode value"),
             Self::UnknownCurrentState => write!(f, "Cannot determine current device state"),
+            Self::SetValue(e) => write!(f, "{e}"),
         }
     }
 }
 
 impl core::error::Error for StateTransitionError {}
+
+impl From<SetValueError> for StateTransitionError {
+    fn from(e: SetValueError) -> Self {
+        Self::SetValue(e)
+    }
+}
 
 /// High-level device state combining power and mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,9 +104,10 @@ impl DeviceState {
     }
 
     /// Apply this state to a DaikinStatus.
-    pub fn apply_to_status(&self, status: &mut DaikinStatus) {
-        status.power.set_value(self.power.to_f32());
-        status.mode.set_value(self.mode);
+    pub fn apply_to_status(&self, status: &mut DaikinStatus) -> Result<(), SetValueError> {
+        status.power.set_value(self.power.to_f32())?;
+        status.mode.set_value(self.mode)?;
+        Ok(())
     }
 }
 
@@ -151,7 +162,7 @@ impl StateTransition {
         let current =
             DeviceState::from_status(status).ok_or(StateTransitionError::UnknownCurrentState)?;
         let new_state = self.apply(&current)?;
-        new_state.apply_to_status(status);
+        new_state.apply_to_status(status)?;
         Ok(new_state)
     }
 }
