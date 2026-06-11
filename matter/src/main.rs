@@ -38,7 +38,8 @@ use rs_matter::dm::networks::eth::EthNetwork;
 use rs_matter::dm::networks::unix::UnixNetifs;
 use rs_matter::dm::subscriptions::Subscriptions;
 use rs_matter::dm::{
-    Async, DataModel, Dataver, EmptyHandler, EpClMatcher, IMBuffer, Node, endpoints,
+    Async, AttrChangeNotifier, DataModel, DataModelHandler, Dataver, EpClMatcher, IMBuffer, Node,
+    endpoints,
 };
 use rs_matter::error::Error;
 use rs_matter::pairing::{DiscoveryCapabilities, qr::QrTextType};
@@ -83,23 +84,19 @@ fn dm_handler<'a>(
     mut rand: impl rand::RngCore,
     bridge: &'a BridgeHandler,
     node: Node<'static>,
-) -> impl rs_matter::dm::AsyncMetadata + rs_matter::dm::AsyncHandler + 'a {
+) -> impl DataModelHandler + 'a {
     let agg_desc_dataver = Dataver::new_rand(&mut rand);
 
     (
         node,
-        endpoints::with_eth_sys(
-            &false,
-            &(),
-            &UnixNetifs,
-            rand,
-            EmptyHandler
-                .chain(
-                    EpClMatcher::new(Some(1), Some(desc::DescHandler::CLUSTER.id)),
-                    Async(desc::DescHandler::new_aggregator(agg_desc_dataver).adapt()),
-                )
-                .chain(BridgedMatcher, Async(bridge)),
-        ),
+        endpoints::EthSysHandlerBuilder::new()
+            .netif_diag(&UnixNetifs)
+            .build(rand)
+            .chain(
+                EpClMatcher::new(Some(1), Some(desc::DescHandler::CLUSTER.id)),
+                Async(desc::DescHandler::new_aggregator(agg_desc_dataver).adapt()),
+            )
+            .chain(BridgedMatcher, Async(bridge)),
     )
 }
 
@@ -109,16 +106,16 @@ fn dm_handler<'a>(
     not(feature = "builtin-mdns")
 ))]
 async fn run_mdns(matter: &Matter<'_>) -> Result<(), Error> {
-    rs_matter::transport::network::mdns::astro::AstroMdnsResponder::new(matter)
-        .run()
+    rs_matter::transport::network::mdns::astro::AstroMdns::new()
+        .run(matter)
         .await
 }
 
 #[cfg(all(feature = "avahi", not(feature = "builtin-mdns")))]
 async fn run_mdns(matter: &Matter<'_>) -> Result<(), Error> {
     let connection = rs_matter::utils::zbus::Connection::system().await.unwrap();
-    rs_matter::transport::network::mdns::avahi::AvahiMdnsResponder::new(matter)
-        .run(&connection)
+    rs_matter::transport::network::mdns::avahi::AvahiMdns::new(connection)
+        .run(matter)
         .await
 }
 
@@ -128,7 +125,7 @@ async fn run_mdns(matter: &Matter<'_>) -> Result<(), Error> {
     use nix::sys::socket::SockaddrIn6;
     use rs_matter::dm::devices::test::TEST_DEV_ATT;
     use rs_matter::error::ErrorCode;
-    use rs_matter::transport::network::mdns::builtin::{BuiltinMdnsResponder, Host};
+    use rs_matter::transport::network::mdns::builtin::{BuiltinMdns, Host};
     use rs_matter::transport::network::mdns::{
         MDNS_IPV4_BROADCAST_ADDR, MDNS_IPV6_BROADCAST_ADDR, MDNS_SOCKET_DEFAULT_BIND_ADDR,
     };
@@ -187,18 +184,19 @@ async fn run_mdns(matter: &Matter<'_>) -> Result<(), Error> {
         .get_ref()
         .join_multicast_v4(&MDNS_IPV4_BROADCAST_ADDR, &ipv4_addr)?;
 
-    BuiltinMdnsResponder::new(matter, crypto)
+    BuiltinMdns::new()
         .run(
             &socket,
             &socket,
             &Host {
-                id: 0,
                 hostname: "daikin-matter",
                 ip: ipv4_addr,
                 ipv6: ipv6_addr,
             },
             Some(ipv4_addr),
             Some(0),
+            matter,
+            crypto,
         )
         .await
 }
@@ -305,11 +303,8 @@ fn run_matter(
         &BRIDGE_DEV_DET,
         COMM_DATA,
         &TEST_DEV_ATT,
-        rs_matter::utils::epoch::sys_epoch,
         MATTER_PORT,
     ));
-
-    matter.initialize_transport_buffers();
 
     let kv_buf = KV_BUF.uninit().init_zeroed().as_mut_slice();
     let mut kv = DirKvBlobStore::new(data_dir);
@@ -347,13 +342,10 @@ fn run_matter(
         .iter()
         .map(|d| (d.ep_id, d.power.is_some()))
         .collect();
-    let bridge_handler = BridgeHandler {
-        devices,
-        subscriptions,
-    };
+    let bridge_handler = BridgeHandler { devices };
     let node = bridge::build_node(&ep_devs);
 
-    let events = NoEvents::new_default();
+    let events = NoEvents::new();
 
     let dm = DataModel::new(
         matter,
@@ -378,12 +370,10 @@ fn run_matter(
     if !matter.is_commissioned() {
         matter.print_standard_qr_text(DiscoveryCapabilities::IP)?;
         matter.print_standard_qr_code(QrTextType::Unicode, DiscoveryCapabilities::IP)?;
-        matter.open_basic_comm_window(MAX_COMM_WINDOW_TIMEOUT_SECS, &crypto, dm.change_notify())?;
+        dm.open_basic_comm_window(MAX_COMM_WINDOW_TIMEOUT_SECS)?;
     }
 
     info!("Matter stack running ({} device(s))", ep_devs.len());
-
-    let notifier = dm.change_notify();
     let mut poll = pin!(async {
         let mut was_reachable: HashMap<u16, bool> = HashMap::new();
         let mut prev: HashMap<u16, dsiot::DaikinStatus> = HashMap::new();
@@ -397,11 +387,7 @@ fn run_matter(
                         let mut changed = Vec::new();
                         if old.is_none_or(|o| o.power != status.power || o.mode != status.mode) {
                             dev.on_off.dataver.changed();
-                            notifier.notify_attr_changed(
-                                dev.ep_id,
-                                onoff::OnOffHandler::CLUSTER.id,
-                                0,
-                            );
+                            dm.notify_attr_changed(dev.ep_id, onoff::OnOffHandler::CLUSTER.id, 0);
                             changed.push("OnOff");
                         }
                         if old.is_none_or(|o| {
@@ -412,7 +398,7 @@ fn run_matter(
                                     != status.sensors.outdoor_temperature
                         }) {
                             dev.therm.dataver.changed();
-                            notifier.notify_attr_changed(
+                            dm.notify_attr_changed(
                                 dev.ep_id,
                                 thermostat::ThermostatHandler::CLUSTER.id,
                                 0,
@@ -421,7 +407,7 @@ fn run_matter(
                         }
                         if old.is_none_or(|o| o.wind != status.wind || o.mode != status.mode) {
                             dev.fan_ctl.dataver.changed();
-                            notifier.notify_attr_changed(
+                            dm.notify_attr_changed(
                                 dev.ep_id,
                                 fan_control::FanControlHandler::CLUSTER.id,
                                 0,
@@ -430,7 +416,7 @@ fn run_matter(
                         }
                         if old.is_none_or(|o| o.sensors.humidity != status.sensors.humidity) {
                             dev.humidity.dataver.changed();
-                            notifier.notify_attr_changed(
+                            dm.notify_attr_changed(
                                 dev.ep_id,
                                 humidity::HumidityHandler::CLUSTER.id,
                                 0,
@@ -441,11 +427,7 @@ fn run_matter(
                             && old.is_none_or(|o| o.power_consumption != status.power_consumption)
                         {
                             p.dataver.changed();
-                            notifier.notify_attr_changed(
-                                dev.ep_id,
-                                power::PowerHandler::CLUSTER.id,
-                                0,
-                            );
+                            dm.notify_attr_changed(dev.ep_id, power::PowerHandler::CLUSTER.id, 0);
                             changed.push("Power");
                         }
                         if changed.is_empty() {
@@ -460,11 +442,7 @@ fn run_matter(
                 let reachable_now = dev.device.is_reachable();
                 if reachable_now != reachable_before {
                     dev.bridged_info.dataver.changed();
-                    notifier.notify_attr_changed(
-                        dev.ep_id,
-                        bridged_info::BridgedInfo::CLUSTER.id,
-                        0,
-                    );
+                    dm.notify_attr_changed(dev.ep_id, bridged_info::BridgedInfo::CLUSTER.id, 0);
                     info!(
                         "Poll ep {}: reachable {} → {}",
                         dev.ep_id, reachable_before, reachable_now

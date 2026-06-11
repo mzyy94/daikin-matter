@@ -1,19 +1,17 @@
 use dsiot::protocol::DaikinInfo;
-use rs_matter::dm::AttrChangeNotifier;
 use rs_matter::dm::clusters::decl::bridged_device_basic_information;
 use rs_matter::dm::clusters::decl::electrical_power_measurement;
-use rs_matter::dm::clusters::decl::power_topology as rs_power_topology;
 use rs_matter::dm::clusters::decl::fan_control as rs_fan_control;
+use rs_matter::dm::clusters::decl::power_topology as rs_power_topology;
 use rs_matter::dm::clusters::decl::relative_humidity_measurement;
 use rs_matter::dm::clusters::decl::thermostat as rs_thermostat;
 use rs_matter::dm::clusters::decl::wi_fi_network_diagnostics;
 use rs_matter::dm::clusters::decl::{identify, on_off};
 use rs_matter::dm::clusters::desc::{self, ClusterHandler as _};
 use rs_matter::dm::devices::{DEV_TYPE_AGGREGATOR, DEV_TYPE_BRIDGED_NODE};
-use rs_matter::dm::subscriptions::Subscriptions;
 use rs_matter::dm::{
-    Dataver, DeviceType, Endpoint, Handler, InvokeContext, InvokeReply, Matcher, Node,
-    NonBlockingHandler, OperationContext, ReadContext, ReadReply, WriteContext,
+    AttrChangeNotifier, Dataver, DeviceType, Endpoint, Handler, InvokeContext, InvokeReply,
+    MatchContext, Matcher, Node, NonBlockingHandler, ReadContext, ReadReply, WriteContext,
 };
 use rs_matter::error::{Error, ErrorCode};
 use rs_matter::{clusters, devices, root_endpoint};
@@ -32,12 +30,13 @@ pub(crate) const DEV_TYPE_ELECTRICAL_SENSOR: DeviceType = DeviceType {
     drev: 1,
 };
 
-const ROOT_EP: Endpoint<'static> = root_endpoint!(geth);
+const ROOT_EP: Endpoint<'static> = root_endpoint!(eth);
 
 const AGGREGATOR_EP: Endpoint<'static> = Endpoint {
     id: 1,
     device_types: devices!(DEV_TYPE_AGGREGATOR),
     clusters: clusters!(desc::DescHandler::CLUSTER),
+    client_clusters: &[],
 };
 
 const BRIDGED_EP: Endpoint<'static> = Endpoint {
@@ -53,6 +52,7 @@ const BRIDGED_EP: Endpoint<'static> = Endpoint {
         humidity::HumidityHandler::CLUSTER,
         wifi_diag::WifiDiagHandler::CLUSTER
     ),
+    client_clusters: &[],
 };
 
 const BRIDGED_EP_POWER: Endpoint<'static> = Endpoint {
@@ -74,6 +74,7 @@ const BRIDGED_EP_POWER: Endpoint<'static> = Endpoint {
         power::PowerHandler::CLUSTER,
         wifi_diag::WifiDiagHandler::CLUSTER
     ),
+    client_clusters: &[],
 };
 
 pub(crate) fn build_node(devices: &[(u16, bool)]) -> Node<'static> {
@@ -120,9 +121,9 @@ impl BridgedDevice {
                     Dataver::new_rand(rand),
                     device.clone(),
                 )),
-                Some(power_topology::PowerTopologyHandler::new(Dataver::new_rand(
-                    rand,
-                ))),
+                Some(power_topology::PowerTopologyHandler::new(
+                    Dataver::new_rand(rand),
+                )),
             )
         } else {
             (None, None)
@@ -148,7 +149,6 @@ impl BridgedDevice {
 
 pub(crate) struct BridgeHandler {
     pub(crate) devices: Vec<BridgedDevice>,
-    pub(crate) subscriptions: &'static Subscriptions,
 }
 
 impl BridgeHandler {
@@ -156,18 +156,13 @@ impl BridgeHandler {
         self.devices.iter().find(|d| d.ep_id == ep_id)
     }
 
-    fn notify_all_clusters(&self, ep: u16) {
-        self.subscriptions
-            .notify_attr_changed(ep, onoff::OnOffHandler::CLUSTER.id, 0);
-        self.subscriptions
-            .notify_attr_changed(ep, thermostat::ThermostatHandler::CLUSTER.id, 0);
-        self.subscriptions
-            .notify_attr_changed(ep, fan_control::FanControlHandler::CLUSTER.id, 0);
-        self.subscriptions
-            .notify_attr_changed(ep, humidity::HumidityHandler::CLUSTER.id, 0);
+    fn notify_all_clusters(&self, ep: u16, notifier: &dyn AttrChangeNotifier) {
+        notifier.notify_attr_changed(ep, onoff::OnOffHandler::CLUSTER.id, 0);
+        notifier.notify_attr_changed(ep, thermostat::ThermostatHandler::CLUSTER.id, 0);
+        notifier.notify_attr_changed(ep, fan_control::FanControlHandler::CLUSTER.id, 0);
+        notifier.notify_attr_changed(ep, humidity::HumidityHandler::CLUSTER.id, 0);
         if self.find(ep).is_some_and(|d| d.power.is_some()) {
-            self.subscriptions
-                .notify_attr_changed(ep, power::PowerHandler::CLUSTER.id, 0);
+            notifier.notify_attr_changed(ep, power::PowerHandler::CLUSTER.id, 0);
         }
     }
 }
@@ -176,15 +171,19 @@ impl BridgeHandler {
 pub(crate) struct BridgedMatcher;
 
 impl Matcher for BridgedMatcher {
-    fn matches(&self, ctx: impl OperationContext) -> bool {
-        ctx.endpt() >= 2
+    fn matches(&self, ctx: impl MatchContext) -> bool {
+        ctx.endpt().is_some_and(|e| e >= 2)
     }
 }
 
 impl Handler for BridgeHandler {
     fn read(&self, ctx: impl ReadContext, reply: impl ReadReply) -> Result<(), Error> {
-        let ep = ctx.endpt();
-        let cl = ctx.cluster();
+        let ep = ctx
+            .endpt()
+            .ok_or(Error::from(ErrorCode::EndpointNotFound))?;
+        let cl = ctx
+            .cluster()
+            .ok_or(Error::from(ErrorCode::ClusterNotFound))?;
         let dev = self
             .find(ep)
             .ok_or(Error::from(ErrorCode::EndpointNotFound))?;
@@ -221,55 +220,90 @@ impl Handler for BridgeHandler {
     }
 
     fn write(&self, ctx: impl WriteContext) -> Result<(), Error> {
-        let ep = ctx.endpt();
-        let cl = ctx.cluster();
+        let ep = ctx
+            .endpt()
+            .ok_or(Error::from(ErrorCode::EndpointNotFound))?;
+        let cl = ctx
+            .cluster()
+            .ok_or(Error::from(ErrorCode::ClusterNotFound))?;
         let dev = self
             .find(ep)
             .ok_or(Error::from(ErrorCode::EndpointNotFound))?;
 
         let result = if cl == BridgedInfo::CLUSTER.id {
-            bridged_device_basic_information::HandlerAdaptor(&dev.bridged_info).write(ctx)
+            bridged_device_basic_information::HandlerAdaptor(&dev.bridged_info).write(&ctx)
         } else if cl == StubIdentify::CLUSTER.id {
-            identify::HandlerAdaptor(&dev.identify).write(ctx)
+            identify::HandlerAdaptor(&dev.identify).write(&ctx)
         } else if cl == onoff::OnOffHandler::CLUSTER.id {
-            on_off::HandlerAdaptor(&dev.on_off).write(ctx)
+            on_off::HandlerAdaptor(&dev.on_off).write(&ctx)
         } else if cl == thermostat::ThermostatHandler::CLUSTER.id {
-            rs_thermostat::HandlerAdaptor(&dev.therm).write(ctx)
+            rs_thermostat::HandlerAdaptor(&dev.therm).write(&ctx)
         } else if cl == fan_control::FanControlHandler::CLUSTER.id {
-            rs_fan_control::HandlerAdaptor(&dev.fan_ctl).write(ctx)
+            rs_fan_control::HandlerAdaptor(&dev.fan_ctl).write(&ctx)
         } else {
             Err(ErrorCode::AttributeNotFound.into())
         };
         if result.is_ok() {
-            self.notify_all_clusters(ep);
+            self.notify_all_clusters(ep, &ctx);
         }
         result
     }
 
     fn invoke(&self, ctx: impl InvokeContext, reply: impl InvokeReply) -> Result<(), Error> {
-        let ep = ctx.endpt();
-        let cl = ctx.cluster();
+        let ep = ctx
+            .endpt()
+            .ok_or(Error::from(ErrorCode::EndpointNotFound))?;
+        let cl = ctx
+            .cluster()
+            .ok_or(Error::from(ErrorCode::ClusterNotFound))?;
         let dev = self
             .find(ep)
             .ok_or(Error::from(ErrorCode::EndpointNotFound))?;
 
         let result = if cl == StubIdentify::CLUSTER.id {
-            identify::HandlerAdaptor(&dev.identify).invoke(ctx, reply)
+            identify::HandlerAdaptor(&dev.identify).invoke(&ctx, reply)
         } else if cl == onoff::OnOffHandler::CLUSTER.id {
-            on_off::HandlerAdaptor(&dev.on_off).invoke(ctx, reply)
+            on_off::HandlerAdaptor(&dev.on_off).invoke(&ctx, reply)
         } else if cl == thermostat::ThermostatHandler::CLUSTER.id {
-            rs_thermostat::HandlerAdaptor(&dev.therm).invoke(ctx, reply)
+            rs_thermostat::HandlerAdaptor(&dev.therm).invoke(&ctx, reply)
         } else if cl == fan_control::FanControlHandler::CLUSTER.id {
-            rs_fan_control::HandlerAdaptor(&dev.fan_ctl).invoke(ctx, reply)
+            rs_fan_control::HandlerAdaptor(&dev.fan_ctl).invoke(&ctx, reply)
         } else if cl == wifi_diag::WifiDiagHandler::CLUSTER.id {
-            wi_fi_network_diagnostics::HandlerAdaptor(&dev.wifi_diag).invoke(ctx, reply)
+            wi_fi_network_diagnostics::HandlerAdaptor(&dev.wifi_diag).invoke(&ctx, reply)
         } else {
             Err(ErrorCode::CommandNotFound.into())
         };
         if result.is_ok() {
-            self.notify_all_clusters(ep);
+            self.notify_all_clusters(ep, &ctx);
         }
         result
+    }
+
+    fn bump_dataver(&self, ctx: impl MatchContext) {
+        let Some(ep) = ctx.endpt() else { return };
+        let Some(cl) = ctx.cluster() else { return };
+        let Some(dev) = self.find(ep) else { return };
+
+        if cl == onoff::OnOffHandler::CLUSTER.id {
+            dev.on_off.dataver.changed();
+        } else if cl == thermostat::ThermostatHandler::CLUSTER.id {
+            dev.therm.dataver.changed();
+        } else if cl == fan_control::FanControlHandler::CLUSTER.id {
+            dev.fan_ctl.dataver.changed();
+        } else if cl == humidity::HumidityHandler::CLUSTER.id {
+            dev.humidity.dataver.changed();
+        } else if cl == BridgedInfo::CLUSTER.id {
+            dev.bridged_info.dataver.changed();
+        } else if cl == power::PowerHandler::CLUSTER.id {
+            if let Some(p) = &dev.power {
+                p.dataver.changed();
+            }
+        } else if cl == power_topology::PowerTopologyHandler::CLUSTER.id {
+            #[allow(clippy::collapsible_if)]
+            if let Some(p) = &dev.power_topology {
+                p.dataver.changed();
+            }
+        }
     }
 }
 
