@@ -16,7 +16,7 @@ std = ["serde/std", "serde_json/std", "hex/std"]
 serde = { version = "1.0.228", default-features = false, features = ["derive", "alloc"] }
 serde_repr = "0.1.20"
 hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
-serde_json = { version = "1.0.149", default-features = false, features = ["alloc"] }
+serde_json = { version = "1.0.150", default-features = false, features = ["alloc"] }
 libm = "0.2"
 
 [dev-dependencies]
