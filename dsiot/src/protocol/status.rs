@@ -248,7 +248,18 @@ mod tests {
             .set_value(AutoModeWindSpeed::Silent)
             .unwrap();
 
-        let _req: DaikinRequest = status.into();
-        // Note: update.json fixture needs to be updated for new structure
+        let req: DaikinRequest = status.into();
+        let json = serde_json::to_string(&req).unwrap();
+
+        assert_eq!(req.requests.len(), 1);
+        assert_eq!(req.requests[0].op, 3);
+        assert_eq!(req.requests[0].to, "/dsiot/edge/adr_0100.dgc_status");
+
+        // Every property set above is serialized into the request tree.
+        assert!(json.contains(r#""pn":"e_A002""#)); // power group
+        assert!(json.contains(r#""pn":"e_3001""#)); // mode/temperature/wind group
+        assert!(json.contains(r#""pn":"p_02""#)); // cooling setpoint
+        assert!(json.contains(r#""pn":"p_09""#)); // cooling wind speed
+        assert!(json.contains(r#""pn":"p_26""#)); // auto wind speed
     }
 }
