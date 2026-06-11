@@ -21,9 +21,13 @@ pub struct DaikinInfo {
     pub security_type: Option<String>,
 }
 
+fn normalize_version(raw: &str) -> String {
+    raw.replace('_', ".")
+}
+
 fn parse_version<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
     let s = String::deserialize(deserializer)?;
-    Ok(s.replace('_', "."))
+    Ok(normalize_version(&s))
 }
 
 fn parse_edid<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
@@ -45,9 +49,9 @@ impl From<DaikinResponse> for DaikinInfo {
         DaikinInfo {
             name: get_prop!(res."/dsiot/edge.adp_d".name .to_string()).unwrap_or_default(),
             mac: get_prop!(res."/dsiot/edge.adp_i".mac .to_string()).unwrap_or_default(),
-            version: get_prop!(res."/dsiot/edge.adp_i".ver .to_string())
-                .unwrap_or_default()
-                .replace('_', "."),
+            version: normalize_version(
+                &get_prop!(res."/dsiot/edge.adp_i".ver .to_string()).unwrap_or_default(),
+            ),
             edid: str2edid(
                 &get_prop!(res."/dsiot/edge.adp_i".edid .to_string()).unwrap_or_default(),
             )

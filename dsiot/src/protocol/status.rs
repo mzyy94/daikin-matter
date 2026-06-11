@@ -137,30 +137,19 @@ impl From<DaikinStatus> for DaikinRequest {
         set_child_prop!({ prop }.e_1002.e_3001.p_03 = status.temperature.heating);
         set_child_prop!({ prop }.e_1002.e_3001.p_1F = status.temperature.automatic);
 
-        // Cooling wind settings
-        set_child_prop!({ prop }.e_1002.e_3001.p_09 = status.wind.cooling.speed);
-        set_child_prop!({ prop }.e_1002.e_3001.p_05 = status.wind.cooling.vertical_direction);
-        set_child_prop!({ prop }.e_1002.e_3001.p_06 = status.wind.cooling.horizontal_direction);
-
-        // Heating wind settings
-        set_child_prop!({ prop }.e_1002.e_3001.p_0A = status.wind.heating.speed);
-        set_child_prop!({ prop }.e_1002.e_3001.p_07 = status.wind.heating.vertical_direction);
-        set_child_prop!({ prop }.e_1002.e_3001.p_08 = status.wind.heating.horizontal_direction);
-
-        // Fan mode wind settings
-        set_child_prop!({ prop }.e_1002.e_3001.p_28 = status.wind.fan.speed);
-        set_child_prop!({ prop }.e_1002.e_3001.p_24 = status.wind.fan.vertical_direction);
-        set_child_prop!({ prop }.e_1002.e_3001.p_25 = status.wind.fan.horizontal_direction);
-
-        // Dehumidify mode wind settings
-        set_child_prop!({ prop }.e_1002.e_3001.p_27 = status.wind.dehumidify.speed);
-        set_child_prop!({ prop }.e_1002.e_3001.p_22 = status.wind.dehumidify.vertical_direction);
-        set_child_prop!({ prop }.e_1002.e_3001.p_23 = status.wind.dehumidify.horizontal_direction);
-
-        // Auto mode wind settings
-        set_child_prop!({ prop }.e_1002.e_3001.p_26 = status.wind.auto.speed);
-        set_child_prop!({ prop }.e_1002.e_3001.p_20 = status.wind.auto.vertical_direction);
-        set_child_prop!({ prop }.e_1002.e_3001.p_21 = status.wind.auto.horizontal_direction);
+        // Wind settings per mode: (speed, vertical, horizontal) property names.
+        macro_rules! set_wind {
+            ($w:expr, $sp:ident, $v:ident, $h:ident) => {{
+                set_child_prop!({ prop }.e_1002.e_3001.$sp = $w.speed);
+                set_child_prop!({ prop }.e_1002.e_3001.$v = $w.vertical_direction);
+                set_child_prop!({ prop }.e_1002.e_3001.$h = $w.horizontal_direction);
+            }};
+        }
+        set_wind!(status.wind.cooling, p_09, p_05, p_06);
+        set_wind!(status.wind.heating, p_0A, p_07, p_08);
+        set_wind!(status.wind.fan, p_28, p_24, p_25);
+        set_wind!(status.wind.dehumidify, p_27, p_22, p_23);
+        set_wind!(status.wind.auto, p_26, p_20, p_21);
 
         DaikinRequest {
             requests: vec![Request {
