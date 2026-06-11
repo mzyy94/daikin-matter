@@ -98,7 +98,7 @@ impl electrical_power_measurement::ClusterHandler for PowerHandler {
                 .end()?
                 .end()?
                 .end(),
-            ArrayAttributeRead::ReadOne(_, _) => Err(ErrorCode::InvalidAction.into()),
+            ArrayAttributeRead::ReadOne(_, _) => Err(ErrorCode::ConstraintError.into()),
             ArrayAttributeRead::ReadNone(array) => array.end(),
         }
     }
