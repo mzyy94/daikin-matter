@@ -9,6 +9,7 @@ mod humidity;
 mod identify;
 mod onoff;
 mod power;
+mod power_topology;
 mod thermostat;
 mod wifi_diag;
 

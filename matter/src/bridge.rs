@@ -2,6 +2,7 @@ use dsiot::protocol::DaikinInfo;
 use rs_matter::dm::AttrChangeNotifier;
 use rs_matter::dm::clusters::decl::bridged_device_basic_information;
 use rs_matter::dm::clusters::decl::electrical_power_measurement;
+use rs_matter::dm::clusters::decl::power_topology as rs_power_topology;
 use rs_matter::dm::clusters::decl::fan_control as rs_fan_control;
 use rs_matter::dm::clusters::decl::relative_humidity_measurement;
 use rs_matter::dm::clusters::decl::thermostat as rs_thermostat;
@@ -19,11 +20,16 @@ use rs_matter::{clusters, devices, root_endpoint};
 
 use crate::bridged_info::BridgedInfo;
 use crate::identify::StubIdentify;
-use crate::{device, fan_control, humidity, onoff, power, thermostat, wifi_diag};
+use crate::{device, fan_control, humidity, onoff, power, power_topology, thermostat, wifi_diag};
 
 pub(crate) const DEV_TYPE_ROOM_AC: DeviceType = DeviceType {
     dtype: 0x0072,
     drev: 2,
+};
+
+pub(crate) const DEV_TYPE_ELECTRICAL_SENSOR: DeviceType = DeviceType {
+    dtype: 0x0510,
+    drev: 1,
 };
 
 const ROOT_EP: Endpoint<'static> = root_endpoint!(geth);
@@ -51,7 +57,11 @@ const BRIDGED_EP: Endpoint<'static> = Endpoint {
 
 const BRIDGED_EP_POWER: Endpoint<'static> = Endpoint {
     id: 0, // placeholder, overridden at runtime
-    device_types: devices!(DEV_TYPE_ROOM_AC, DEV_TYPE_BRIDGED_NODE),
+    device_types: devices!(
+        DEV_TYPE_ROOM_AC,
+        DEV_TYPE_ELECTRICAL_SENSOR,
+        DEV_TYPE_BRIDGED_NODE
+    ),
     clusters: clusters!(
         desc::DescHandler::CLUSTER,
         StubIdentify::CLUSTER,
@@ -60,6 +70,7 @@ const BRIDGED_EP_POWER: Endpoint<'static> = Endpoint {
         thermostat::ThermostatHandler::CLUSTER,
         fan_control::FanControlHandler::CLUSTER,
         humidity::HumidityHandler::CLUSTER,
+        power_topology::PowerTopologyHandler::CLUSTER,
         power::PowerHandler::CLUSTER,
         wifi_diag::WifiDiagHandler::CLUSTER
     ),
@@ -90,6 +101,7 @@ pub(crate) struct BridgedDevice {
     pub(crate) fan_ctl: fan_control::FanControlHandler,
     pub(crate) humidity: humidity::HumidityHandler,
     pub(crate) power: Option<power::PowerHandler>,
+    pub(crate) power_topology: Option<power_topology::PowerTopologyHandler>,
     pub(crate) wifi_diag: wifi_diag::WifiDiagHandler,
     pub(crate) device: device::Device,
 }
@@ -102,13 +114,18 @@ impl BridgedDevice {
         device: device::Device,
         info: DaikinInfo,
     ) -> Self {
-        let power = if info.en_ipower {
-            Some(power::PowerHandler::new(
-                Dataver::new_rand(rand),
-                device.clone(),
-            ))
+        let (power, power_topology) = if info.en_ipower {
+            (
+                Some(power::PowerHandler::new(
+                    Dataver::new_rand(rand),
+                    device.clone(),
+                )),
+                Some(power_topology::PowerTopologyHandler::new(Dataver::new_rand(
+                    rand,
+                ))),
+            )
         } else {
-            None
+            (None, None)
         };
         let wifi_diag =
             wifi_diag::WifiDiagHandler::new(Dataver::new_rand(rand), info, device.clone());
@@ -122,6 +139,7 @@ impl BridgedDevice {
             fan_ctl: fan_control::FanControlHandler::new(Dataver::new_rand(rand), device.clone()),
             humidity: humidity::HumidityHandler::new(Dataver::new_rand(rand), device.clone()),
             power,
+            power_topology,
             wifi_diag,
             device,
         }
@@ -188,6 +206,11 @@ impl Handler for BridgeHandler {
         } else if cl == power::PowerHandler::CLUSTER.id {
             match &dev.power {
                 Some(p) => electrical_power_measurement::HandlerAdaptor(p).read(ctx, reply),
+                None => Err(ErrorCode::ClusterNotFound.into()),
+            }
+        } else if cl == power_topology::PowerTopologyHandler::CLUSTER.id {
+            match &dev.power_topology {
+                Some(p) => rs_power_topology::HandlerAdaptor(p).read(ctx, reply),
                 None => Err(ErrorCode::ClusterNotFound.into()),
             }
         } else if cl == wifi_diag::WifiDiagHandler::CLUSTER.id {
