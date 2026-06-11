@@ -10,15 +10,15 @@ use std::str;
 use std::time::Duration;
 use tokio::net::UdpSocket;
 
+const FALLBACK: (IpAddr, IpAddr) = (
+    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+    IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
+);
+
 fn get_ipaddr() -> (IpAddr, IpAddr) {
     let network_interfaces = match NetworkInterface::show() {
         Ok(i) => i,
-        Err(_) => {
-            return (
-                IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
-            );
-        }
+        Err(_) => return FALLBACK,
     };
 
     let nis: Vec<&NetworkInterface> = network_interfaces
@@ -31,25 +31,14 @@ fn get_ipaddr() -> (IpAddr, IpAddr) {
         .collect();
 
     if nis.len() != 1 {
-        return (
-            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-            IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
-        );
+        return FALLBACK;
     }
 
     // Safe: filter above guarantees at least one IPv4 address exists
     let Some(ipv4_addr) = nis[0].addr.iter().find(|a| a.ip().is_ipv4()) else {
-        return (
-            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-            IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255)),
-        );
+        return FALLBACK;
     };
-    (
-        ipv4_addr.ip(),
-        ipv4_addr
-            .broadcast()
-            .unwrap_or(IpAddr::V4(Ipv4Addr::new(255, 255, 255, 255))),
-    )
+    (ipv4_addr.ip(), ipv4_addr.broadcast().unwrap_or(FALLBACK.1))
 }
 
 /// Discover Daikin devices on the local network.

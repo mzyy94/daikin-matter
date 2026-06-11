@@ -142,7 +142,9 @@ impl<H: HttpClient> Daikin<H> {
     /// Update device status.
     pub async fn update(&self, status: DaikinStatus) -> anyhow::Result<()> {
         let payload = serde_json::to_value(DaikinRequest::from(status.clone()))?;
-        self.client.send_request(&self.endpoint, payload).await?;
+        let body = self.client.send_request(&self.endpoint, payload).await?;
+        // Reject the write if the device returned an error status code.
+        serde_json::from_value::<DaikinResponse>(body)?;
         self.cache.write().await.update(status);
         Ok(())
     }
