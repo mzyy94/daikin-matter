@@ -94,14 +94,17 @@ Tested with iOS 26.4.2, Home Assistant 2026.4.3, and Daikin AC firmware 3.11.0.
 
 ## Compatibility
 
-The app is compatible with year 2022 or later model Daikin Air Conditioners.
+The app is compatible with year 2022 or later model Daikin Air Conditioners that use the HTTP DSIOT protocol (`adp_kind=4`, `api_ver=2_*`).
 It has been tested on [Daikin risora] which has built-in Wi-Fi modules and an IR remote control like the following.
 
 [Daikin risora]: https://www.ac.daikin.co.jp/kabekake/products/sx_series
 
 <img alt="risora ir remote display" src="/docs/remote.png" width="540">
 
-To check compatibility, run a command below.
+> [!WARNING]
+> Newer Daikin models ship with a different Wi-Fi adapter (`adp_kind=5`, `api_ver=3_0`) that exposes only an HTTPS DSIOT endpoint with authentication. These devices are **not yet supported**.
+
+To check compatibility, run the command below.
 
 ```bash
 $ cargo run --example compatibility_check <your device ip address>
