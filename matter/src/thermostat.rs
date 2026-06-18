@@ -40,6 +40,10 @@ impl ThermostatHandler {
             | thermostat::AttributeId::AbsMaxHeatSetpointLimit
             | thermostat::AttributeId::AbsMinCoolSetpointLimit
             | thermostat::AttributeId::AbsMaxCoolSetpointLimit
+            | thermostat::AttributeId::MinHeatSetpointLimit
+            | thermostat::AttributeId::MaxHeatSetpointLimit
+            | thermostat::AttributeId::MinCoolSetpointLimit
+            | thermostat::AttributeId::MaxCoolSetpointLimit
             | thermostat::AttributeId::ControlSequenceOfOperation
             | thermostat::AttributeId::ThermostatRunningMode
             | thermostat::AttributeId::ThermostatRunningState
@@ -97,6 +101,17 @@ fn validate_temp(temp: f32, constraints: &ValueConstraints) -> Result<f32, Error
     let stepped =
         ((temp - constraints.min) / constraints.step).round() * constraints.step + constraints.min;
     Ok(stepped.clamp(constraints.min, constraints.max))
+}
+
+fn setpoint_limit(
+    constraints: Option<ValueConstraints>,
+    fallback_celsius: f32,
+    value: impl FnOnce(&ValueConstraints) -> f32,
+) -> i16 {
+    match constraints {
+        Some(constraints) => temp_to_matter(value(&constraints)),
+        None => temp_to_matter(fallback_celsius),
+    }
 }
 
 impl thermostat::ClusterHandler for ThermostatHandler {
@@ -219,34 +234,74 @@ impl thermostat::ClusterHandler for ThermostatHandler {
 
     fn abs_min_heat_setpoint_limit(&self, _ctx: impl ReadContext) -> Result<i16, Error> {
         let status = self.get_status()?;
-        match ValueConstraints::from_item(&status.temperature.heating) {
-            Some(c) => Ok(temp_to_matter(c.min)),
-            None => Ok(700), // 7.0°C
-        }
+        Ok(setpoint_limit(
+            ValueConstraints::from_item(&status.temperature.heating),
+            7.0,
+            |c| c.min,
+        ))
     }
 
     fn abs_max_heat_setpoint_limit(&self, _ctx: impl ReadContext) -> Result<i16, Error> {
         let status = self.get_status()?;
-        match ValueConstraints::from_item(&status.temperature.heating) {
-            Some(c) => Ok(temp_to_matter(c.max)),
-            None => Ok(3000), // 30.0°C
-        }
+        Ok(setpoint_limit(
+            ValueConstraints::from_item(&status.temperature.heating),
+            30.0,
+            |c| c.max,
+        ))
     }
 
     fn abs_min_cool_setpoint_limit(&self, _ctx: impl ReadContext) -> Result<i16, Error> {
         let status = self.get_status()?;
-        match ValueConstraints::from_item(&status.temperature.cooling) {
-            Some(c) => Ok(temp_to_matter(c.min)),
-            None => Ok(1600), // 16.0°C
-        }
+        Ok(setpoint_limit(
+            ValueConstraints::from_item(&status.temperature.cooling),
+            16.0,
+            |c| c.min,
+        ))
     }
 
     fn abs_max_cool_setpoint_limit(&self, _ctx: impl ReadContext) -> Result<i16, Error> {
         let status = self.get_status()?;
-        match ValueConstraints::from_item(&status.temperature.cooling) {
-            Some(c) => Ok(temp_to_matter(c.max)),
-            None => Ok(3200), // 32.0°C
-        }
+        Ok(setpoint_limit(
+            ValueConstraints::from_item(&status.temperature.cooling),
+            32.0,
+            |c| c.max,
+        ))
+    }
+
+    fn min_heat_setpoint_limit(&self, _ctx: impl ReadContext) -> Result<i16, Error> {
+        let status = self.get_status()?;
+        Ok(setpoint_limit(
+            ValueConstraints::from_item(&status.temperature.heating),
+            7.0,
+            |c| c.min,
+        ))
+    }
+
+    fn max_heat_setpoint_limit(&self, _ctx: impl ReadContext) -> Result<i16, Error> {
+        let status = self.get_status()?;
+        Ok(setpoint_limit(
+            ValueConstraints::from_item(&status.temperature.heating),
+            30.0,
+            |c| c.max,
+        ))
+    }
+
+    fn min_cool_setpoint_limit(&self, _ctx: impl ReadContext) -> Result<i16, Error> {
+        let status = self.get_status()?;
+        Ok(setpoint_limit(
+            ValueConstraints::from_item(&status.temperature.cooling),
+            16.0,
+            |c| c.min,
+        ))
+    }
+
+    fn max_cool_setpoint_limit(&self, _ctx: impl ReadContext) -> Result<i16, Error> {
+        let status = self.get_status()?;
+        Ok(setpoint_limit(
+            ValueConstraints::from_item(&status.temperature.cooling),
+            32.0,
+            |c| c.max,
+        ))
     }
 
     fn control_sequence_of_operation(
@@ -411,5 +466,41 @@ impl thermostat::ClusterHandler for ThermostatHandler {
         _response: thermostat::AtomicResponseBuilder<P>,
     ) -> Result<P, Error> {
         Err(ErrorCode::InvalidCommand.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matter_temperatures_are_celsius_hundredths() {
+        assert_eq!(temp_to_matter(18.0), 1800);
+        assert_eq!(temp_to_matter(21.5), 2150);
+        assert_eq!(temp_from_matter(2250), 22.5);
+    }
+
+    #[test]
+    fn setpoint_limit_uses_constraints_when_present() {
+        let constraints = ValueConstraints::new(18.0, 32.0, 0.5);
+
+        assert_eq!(
+            setpoint_limit(Some(constraints.clone()), 16.0, |c| c.min),
+            1800
+        );
+        assert_eq!(setpoint_limit(Some(constraints), 32.0, |c| c.max), 3200);
+    }
+
+    #[test]
+    fn setpoint_limit_uses_fallback_without_constraints() {
+        assert_eq!(setpoint_limit(None, 16.0, |c| c.min), 1600);
+    }
+
+    #[test]
+    fn validate_temp_rounds_to_nearest_supported_step() {
+        let constraints = ValueConstraints::new(18.0, 32.0, 0.5);
+
+        assert_eq!(validate_temp(22.2, &constraints).unwrap(), 22.0);
+        assert_eq!(validate_temp(22.3, &constraints).unwrap(), 22.5);
     }
 }
