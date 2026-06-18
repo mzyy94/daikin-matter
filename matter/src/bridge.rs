@@ -312,3 +312,51 @@ impl Handler for BridgeHandler {
 }
 
 impl NonBlockingHandler for BridgeHandler {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_node_sorts_endpoints_ascending() {
+        let node = build_node(&[(5, false), (3, true), (4, false)]);
+        let ids: Vec<u16> = node.endpoints.iter().map(|e| e.id).collect();
+        // root (0) + aggregator (1) + sorted bridged eps
+        assert_eq!(ids, vec![0, 1, 3, 4, 5]);
+    }
+
+    #[test]
+    fn build_node_dedupes_duplicate_endpoint_ids() {
+        let node = build_node(&[(3, false), (3, true), (3, false)]);
+        let bridged: Vec<u16> = node
+            .endpoints
+            .iter()
+            .map(|e| e.id)
+            .filter(|id| *id >= 2)
+            .collect();
+        assert_eq!(bridged, vec![3]);
+    }
+
+    #[test]
+    fn build_node_picks_power_template_when_requested() {
+        let node = build_node(&[(2, true)]);
+        let ep = node.endpoints.iter().find(|e| e.id == 2).unwrap();
+        // Power-enabled endpoint exposes ElectricalPowerMeasurement.
+        assert!(
+            ep.clusters
+                .iter()
+                .any(|c| c.id == power::PowerHandler::CLUSTER.id)
+        );
+    }
+
+    #[test]
+    fn build_node_omits_power_cluster_when_not_requested() {
+        let node = build_node(&[(2, false)]);
+        let ep = node.endpoints.iter().find(|e| e.id == 2).unwrap();
+        assert!(
+            !ep.clusters
+                .iter()
+                .any(|c| c.id == power::PowerHandler::CLUSTER.id)
+        );
+    }
+}

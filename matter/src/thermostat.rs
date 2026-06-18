@@ -475,6 +475,7 @@ mod tests {
 
     #[test]
     fn matter_temperatures_are_celsius_hundredths() {
+        assert_eq!(temp_to_matter(0.0), 0);
         assert_eq!(temp_to_matter(18.0), 1800);
         assert_eq!(temp_to_matter(21.5), 2150);
         assert_eq!(temp_from_matter(2250), 22.5);
@@ -502,5 +503,28 @@ mod tests {
 
         assert_eq!(validate_temp(22.2, &constraints).unwrap(), 22.0);
         assert_eq!(validate_temp(22.3, &constraints).unwrap(), 22.5);
+    }
+
+    #[test]
+    fn validate_temp_accepts_value_on_step_grid() {
+        let c = ValueConstraints::new(18.0, 32.0, 0.5);
+        assert_eq!(validate_temp(18.0, &c).unwrap(), 18.0);
+        assert_eq!(validate_temp(22.5, &c).unwrap(), 22.5);
+        assert_eq!(validate_temp(32.0, &c).unwrap(), 32.0);
+    }
+
+    #[test]
+    fn validate_temp_rejects_out_of_range() {
+        let c = ValueConstraints::new(18.0, 32.0, 0.5);
+        assert!(validate_temp(17.9, &c).is_err());
+        assert!(validate_temp(32.1, &c).is_err());
+        assert!(validate_temp(-5.0, &c).is_err());
+    }
+
+    #[test]
+    fn validate_temp_respects_step_size() {
+        let one_degree = ValueConstraints::new(16.0, 30.0, 1.0);
+        assert_eq!(validate_temp(20.4, &one_degree).unwrap(), 20.0);
+        assert_eq!(validate_temp(20.5, &one_degree).unwrap(), 21.0);
     }
 }

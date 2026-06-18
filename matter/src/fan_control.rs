@@ -457,3 +457,98 @@ impl fan_control::ClusterHandler for FanControlHandler {
         Err(ErrorCode::InvalidCommand.into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wind_speed_to_setting_maps_silent_to_one() {
+        assert_eq!(wind_speed_to_setting(WindSpeed::Silent), 1);
+        assert_eq!(wind_speed_to_setting(WindSpeed::Lev1), 1);
+    }
+
+    #[test]
+    fn wind_speed_to_setting_maps_auto_to_three() {
+        assert_eq!(wind_speed_to_setting(WindSpeed::Auto), 3);
+        assert_eq!(wind_speed_to_setting(WindSpeed::Lev3), 3);
+    }
+
+    #[test]
+    fn wind_speed_to_setting_covers_each_level() {
+        assert_eq!(wind_speed_to_setting(WindSpeed::Lev2), 2);
+        assert_eq!(wind_speed_to_setting(WindSpeed::Lev4), 4);
+        assert_eq!(wind_speed_to_setting(WindSpeed::Lev5), 5);
+    }
+
+    #[test]
+    fn wind_speed_to_setting_unknown_returns_zero() {
+        assert_eq!(wind_speed_to_setting(WindSpeed::Unknown), 0);
+    }
+
+    #[test]
+    fn setting_to_wind_speed_maps_levels() {
+        assert_eq!(setting_to_wind_speed(1), WindSpeed::Lev1);
+        assert_eq!(setting_to_wind_speed(2), WindSpeed::Lev2);
+        assert_eq!(setting_to_wind_speed(3), WindSpeed::Lev3);
+        assert_eq!(setting_to_wind_speed(4), WindSpeed::Lev4);
+        assert_eq!(setting_to_wind_speed(5), WindSpeed::Lev5);
+    }
+
+    #[test]
+    fn setting_to_wind_speed_zero_falls_back_to_auto() {
+        assert_eq!(setting_to_wind_speed(0), WindSpeed::Auto);
+        assert_eq!(setting_to_wind_speed(99), WindSpeed::Auto);
+    }
+
+    #[test]
+    fn setting_wind_speed_levels_roundtrip() {
+        for level in 1..=5 {
+            assert_eq!(wind_speed_to_setting(setting_to_wind_speed(level)), level);
+        }
+    }
+
+    #[test]
+    fn wind_speed_to_fan_mode_off_overrides_speed() {
+        assert_eq!(
+            wind_speed_to_fan_mode(WindSpeed::Lev5, true),
+            fan_control::FanModeEnum::Off
+        );
+        assert_eq!(
+            wind_speed_to_fan_mode(WindSpeed::Auto, true),
+            fan_control::FanModeEnum::Off
+        );
+    }
+
+    #[test]
+    fn wind_speed_to_fan_mode_buckets_speeds() {
+        assert_eq!(
+            wind_speed_to_fan_mode(WindSpeed::Auto, false),
+            fan_control::FanModeEnum::Auto
+        );
+        assert_eq!(
+            wind_speed_to_fan_mode(WindSpeed::Silent, false),
+            fan_control::FanModeEnum::Low
+        );
+        assert_eq!(
+            wind_speed_to_fan_mode(WindSpeed::Lev1, false),
+            fan_control::FanModeEnum::Low
+        );
+        assert_eq!(
+            wind_speed_to_fan_mode(WindSpeed::Lev2, false),
+            fan_control::FanModeEnum::Medium
+        );
+        assert_eq!(
+            wind_speed_to_fan_mode(WindSpeed::Lev3, false),
+            fan_control::FanModeEnum::Medium
+        );
+        assert_eq!(
+            wind_speed_to_fan_mode(WindSpeed::Lev4, false),
+            fan_control::FanModeEnum::High
+        );
+        assert_eq!(
+            wind_speed_to_fan_mode(WindSpeed::Lev5, false),
+            fan_control::FanModeEnum::High
+        );
+    }
+}
