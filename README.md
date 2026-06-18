@@ -63,6 +63,57 @@ $ sudo systemctl status daikin-matter
 $ journalctl -u daikin-matter -f
 ```
 
+## Generation5 HTTPS adapters
+
+Generation5 adapters (2026 RX / RX-series HTTPS-only adapters) require a local API key.
+Only the raw `localApiKey` value is needed; `localKeyID` is not used by this bridge.
+The exact extraction path depends on app platform and version, but the key is stored in the official Daikin app data (e.g., extracted from an encrypted iPhone backup).
+After exporting or extracting the app data, search for it:
+
+```bash
+$ grep -R "localApiKey" path/to/extracted-daikin-app-data
+```
+
+Write only the raw key value to a file:
+
+```bash
+$ umask 077
+$ ${EDITOR:-vi} local_api_key
+$ chmod 0600 local_api_key
+```
+
+Pass the key file when using explicit IP addresses. The bridge tries HTTPS first and falls back to plain HTTP if HTTPS is unavailable, allowing mixed adapter generations in one command:
+
+```bash
+$ daikin-matter --local-api-key-file ./local_api_key 192.168.1.150 192.168.1.151 192.168.1.152 192.168.1.153
+```
+
+For systemd, install the key where only root can read it:
+
+```bash
+$ sudo install -d -m0755 /etc/daikin-matter
+$ sudo install -o root -g root -m0600 local_api_key /etc/daikin-matter/local_api_key
+```
+
+Then override the service command with the key file and your adapter IP addresses:
+
+```bash
+$ sudo systemctl edit daikin-matter
+```
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/daikin-matter --local-api-key-file /etc/daikin-matter/local_api_key 192.168.1.150 192.168.1.151 192.168.1.152 192.168.1.153
+```
+
+Reload and restart the service after saving the override:
+
+```bash
+$ sudo systemctl daemon-reload
+$ sudo systemctl restart daikin-matter
+```
+
 ## Debug
 
 ```bash

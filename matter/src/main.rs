@@ -16,9 +16,10 @@ mod wifi_diag;
 use core::pin::pin;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, UdpSocket};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use anyhow::Context;
 use clap::Parser;
 use daikin_client::{Daikin, ReqwestClient, discovery};
 use dsiot::DaikinInfo;
@@ -219,12 +220,72 @@ struct Cli {
     /// Directory to store persistent data (pairing, fabrics, etc.)
     #[arg(long, value_name = "DIR")]
     data_dir: Option<PathBuf>,
+
+    /// File containing the Gen5 local API key for HTTPS adapters
+    #[arg(long, value_name = "PATH")]
+    local_api_key_file: Option<PathBuf>,
 }
 
 fn default_data_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("daikin-matter")
+}
+
+fn read_local_api_key(path: &Path) -> anyhow::Result<String> {
+    let contents = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read local API key file {}", path.display()))?;
+    let local_api_key = contents.trim().to_string();
+    if local_api_key.is_empty() {
+        anyhow::bail!("local API key is empty: {}", path.display());
+    }
+    Ok(local_api_key)
+}
+
+async fn connect_http(ip_addr: Ipv4Addr) -> anyhow::Result<(Daikin<ReqwestClient>, DaikinInfo)> {
+    let dk = Daikin::new(ip_addr, ReqwestClient::try_new()?);
+    let info = dk.get_info().await?;
+    info!(
+        "Device: {} (MAC: {}, EDID: {})",
+        info.name, info.mac, info.edid
+    );
+    let status = dk.get_status().await?;
+    debug!("Status: {:?}", status);
+    Ok((dk, info))
+}
+
+async fn connect_https(
+    ip_addr: Ipv4Addr,
+    local_api_key: &str,
+) -> anyhow::Result<(Daikin<ReqwestClient>, DaikinInfo)> {
+    let dk = Daikin::new_https(
+        ip_addr,
+        ReqwestClient::try_new_with_local_api_key(local_api_key)?,
+    );
+    let info = dk.get_info().await?;
+    info!(
+        "Device: {} (MAC: {}, EDID: {}) via HTTPS",
+        info.name, info.mac, info.edid
+    );
+    let status = dk.get_status().await?;
+    debug!("Status: {:?}", status);
+    Ok((dk, info))
+}
+
+async fn connect_explicit_ip(
+    ip_addr: Ipv4Addr,
+    local_api_key: Option<&str>,
+) -> anyhow::Result<(Daikin<ReqwestClient>, DaikinInfo)> {
+    if let Some(local_api_key) = local_api_key {
+        match connect_https(ip_addr, local_api_key).await {
+            Ok(connection) => return Ok(connection),
+            Err(error) => {
+                warn!("HTTPS connection to {ip_addr} failed; falling back to HTTP: {error:#}");
+            }
+        }
+    }
+
+    connect_http(ip_addr).await
 }
 
 fn main() -> anyhow::Result<()> {
@@ -234,6 +295,11 @@ fn main() -> anyhow::Result<()> {
     .init();
 
     let cli = Cli::parse();
+    let local_api_key = cli
+        .local_api_key_file
+        .as_deref()
+        .map(read_local_api_key)
+        .transpose()?;
 
     let rt = tokio::runtime::Runtime::new()?;
     let connections: Vec<(Daikin<ReqwestClient>, DaikinInfo)> = rt.block_on(async {
@@ -258,15 +324,7 @@ fn main() -> anyhow::Result<()> {
             }
         } else {
             for ip in &cli.ip_addrs {
-                let dk = Daikin::new(*ip, ReqwestClient::try_new()?);
-                let info = dk.get_info().await?;
-                info!(
-                    "Device: {} (MAC: {}, EDID: {})",
-                    info.name, info.mac, info.edid
-                );
-                let status = dk.get_status().await?;
-                debug!("Status: {:?}", status);
-                conns.push((dk, info));
+                conns.push(connect_explicit_ip(*ip, local_api_key.as_deref()).await?);
             }
         }
         if conns.is_empty() {
@@ -458,4 +516,58 @@ fn run_matter(
     futures_lite::future::block_on(all)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn read_local_api_key_trims_file_contents() {
+        let path = std::env::temp_dir().join(format!(
+            "daikin-matter-local-api-key-{}-trim",
+            std::process::id()
+        ));
+        fs::write(&path, "  secret-value\n").unwrap();
+
+        let key = read_local_api_key(&path).unwrap();
+
+        assert_eq!(key, "secret-value");
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn read_local_api_key_rejects_empty_file() {
+        let path = std::env::temp_dir().join(format!(
+            "daikin-matter-local-api-key-{}-empty",
+            std::process::id()
+        ));
+        fs::write(&path, "\n\t ").unwrap();
+
+        let error = read_local_api_key(&path).unwrap_err();
+
+        assert!(error.to_string().contains("local API key is empty"));
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn cli_accepts_local_api_key_file_with_explicit_ips() {
+        let cli = Cli::try_parse_from([
+            "daikin-matter",
+            "--local-api-key-file",
+            "/var/lib/daikin-matter/local_api_key",
+            "192.168.1.150",
+            "192.168.1.151",
+            "192.168.1.152",
+            "192.168.1.153",
+        ])
+        .unwrap();
+
+        assert_eq!(
+            cli.local_api_key_file.as_deref(),
+            Some(Path::new("/var/lib/daikin-matter/local_api_key"))
+        );
+        assert_eq!(cli.ip_addrs.len(), 4);
+    }
 }
