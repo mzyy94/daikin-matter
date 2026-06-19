@@ -1,3 +1,10 @@
 [workspace]
 members = ["matter", "dsiot", "daikin-client"]
 resolver = "2"
+
+[workspace.package]
+version = "0.3.4"
+edition = "2024"
+authors = ["mzyy94"]
+rust-version = "1.95"
+license = "GPL-3.0"

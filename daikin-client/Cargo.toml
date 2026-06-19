@@ -1,11 +1,11 @@
 [package]
 name = "daikin-client"
-version = "0.2.3"
-edition = "2024"
-authors = ["mzyy94"]
-rust-version = "1.95"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+rust-version.workspace = true
 description = "Daikin AC network client library"
-license = "GPL-3.0"
+license.workspace = true
 keywords = ["daikin", "hvac", "iot"]
 
 [dependencies]
