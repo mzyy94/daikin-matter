@@ -4,6 +4,7 @@ After=network.target
 
 [Service]
 Environment="RUST_LOG=rs_matter=info,daikin_matter=info"
+EnvironmentFile=-/etc/daikin-matter/env
 ExecStart=/usr/local/bin/daikin-matter
 Type=simple
 Restart=always

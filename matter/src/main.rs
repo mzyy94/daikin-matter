@@ -119,11 +119,13 @@ fn main() -> anyhow::Result<()> {
     .init();
 
     let cli = Cli::parse();
-    let local_api_key = cli
-        .local_api_key_file
-        .as_deref()
-        .map(read_local_api_key)
-        .transpose()?;
+    let local_api_key = match cli.local_api_key_file.as_deref() {
+        Some(path) => Some(read_local_api_key(path)?),
+        None => std::env::var("DAIKIN_LOCAL_API_KEY")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+    };
 
     let rt = tokio::runtime::Runtime::new()?;
     let connections: Vec<(Daikin<ReqwestClient>, DaikinInfo)> = rt.block_on(async {
