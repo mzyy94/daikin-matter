@@ -13,6 +13,10 @@ pub struct DaikinInfo {
     pub edid: u64,
     #[serde(default)]
     pub en_ipower: bool,
+    #[serde(default)]
+    pub adp_kind: Option<u8>,
+    #[serde(default)]
+    pub api_ver: Option<String>,
     #[serde(skip)]
     pub rssi: Option<i8>,
     #[serde(skip)]
@@ -60,6 +64,8 @@ impl From<DaikinResponse> for DaikinInfo {
                 let v: Item<f32> = get_prop!(res."/dsiot/edge.adp_i".func.en_ipower);
                 v.get_int() == Some(1)
             },
+            adp_kind: None,
+            api_ver: None,
             rssi: {
                 let v: Item<f32> = get_prop!(res."/dsiot/edge.adp_r".wlan_info.rssi);
                 v.get_int().map(|v| v as i8)
@@ -105,5 +111,16 @@ mod tests {
         assert_eq!(info.mac, "00005E005342");
         assert_eq!(info.version, "2.7.0");
         assert_eq!(info.edid, 19088743);
+        assert_eq!(info.adp_kind, Some(4));
+        assert_eq!(info.api_ver.as_deref(), Some("2_2"));
+    }
+
+    #[test]
+    fn http_response_leaves_adapter_fields_unset() {
+        let res: DaikinResponse = serde_json::from_str(include_str!("../fixtures/info.json"))
+            .expect("Invalid JSON file.");
+        let info: DaikinInfo = res.into();
+        assert_eq!(info.adp_kind, None);
+        assert_eq!(info.api_ver, None);
     }
 }
