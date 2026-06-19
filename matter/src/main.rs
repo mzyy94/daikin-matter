@@ -30,23 +30,32 @@ use futures_lite::StreamExt;
 #[command(author, version, about)]
 struct Cli {
     /// IPv4 address of Daikin AC
-    #[arg(value_name = "ip_address")]
+    #[arg(
+        value_name = "ip_address",
+        env = "DAIKIN_IP_ADDRS",
+        value_delimiter = ' '
+    )]
     ip_addrs: Vec<Ipv4Addr>,
 
     /// Discovery timeout in milliseconds
-    #[arg(long, default_value = "3000")]
+    #[arg(long, env = "DAIKIN_TIMEOUT", default_value = "3000")]
     timeout: u64,
 
     /// Expected number of devices to discover
-    #[arg(long, default_value = "128", hide_default_value = true)]
+    #[arg(
+        long,
+        env = "DAIKIN_COUNT",
+        default_value = "128",
+        hide_default_value = true
+    )]
     count: usize,
 
     /// Directory to store persistent data (pairing, fabrics, etc.)
-    #[arg(long, value_name = "DIR")]
+    #[arg(long, env = "DAIKIN_DATA_DIR", value_name = "DIR")]
     data_dir: Option<PathBuf>,
 
     /// File containing the Gen5 local API key for HTTPS adapters
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, env = "DAIKIN_LOCAL_API_KEY_FILE", value_name = "PATH")]
     local_api_key_file: Option<PathBuf>,
 }
 
