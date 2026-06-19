@@ -26,13 +26,36 @@ Open your Matter controller (Apple Home, Google Home, Home Assistant, etc.) and 
 By default, a device is automatically discovered at startup when run the command without any arguments.
 If you want to specify a device, run with the IP address as an argument. Run `daikin-matter -h` for more detail.
 
+## Configuration
+
+Each option can be set via CLI flag or environment variable. Env vars are convenient under systemd via `EnvironmentFile=`.
+
+| CLI flag | Environment variable | Description |
+|---|---|---|
+| (argument) | `DAIKIN_IP_ADDRS` | Space-separated IPv4 addresses. Set empty to auto-discover. |
+| `--count <N>` | `DAIKIN_COUNT` | Stop discovery after this many devices. |
+| `--timeout <MS>` | `DAIKIN_TIMEOUT` | Discovery timeout in milliseconds. |
+| `--data-dir <DIR>` | `DAIKIN_DATA_DIR` | Persistent data directory. |
+| `--local-api-key-file <PATH>` | `DAIKIN_LOCAL_API_KEY_FILE` | Path to a file containing the Gen5 raw `localApiKey`. |
+| n/a | `DAIKIN_LOCAL_API_KEY` | Raw Gen5 `localApiKey` value (alternative to the file). |
+
 ## Installation
 
-Get and unarchive latest release from [Releases Page](https://github.com/mzyy94/daikin-matter/releases) and install it with the following command.
+For debian/ubuntu:
+
+Download the `.deb` for your architecture from the [Releases Page](https://github.com/mzyy94/daikin-matter/releases) and install:
 
 ```bash
-$ install -m0755 daikin-matter /usr/local/bin/
+$ sudo apt install ./daikin-matter_*.deb
 ```
+
+The service starts automatically on install. The bridge prints the pairing QR code to the journal on first boot
+
+```bash
+$ journalctl -u daikin-matter -b -o cat | grep QRCode -A20
+```
+
+For other systems, see [Build](#build).
 
 ## Build
 
@@ -46,14 +69,11 @@ On Linux, the `builtin-mdns` feature is recommended as it does not require Avahi
 $ cargo install --git https://github.com/mzyy94/daikin-matter --root /usr/local --no-default-features --features builtin-mdns
 ```
 
-## Running as a daemon (systemd)
 
-A systemd service file is included in the repository. To run `daikin-matter` as a background service on Linux:
+## Debug
 
 ```bash
-$ sudo curl https://github.com/mzyy94/daikin-matter/raw/refs/heads/master/daikin-matter.service -LO --output-dir /etc/systemd/system/
-$ sudo systemctl daemon-reload
-$ sudo systemctl enable --now daikin-matter
+$ RUST_LOG=daikin_matter=debug daikin-matter
 ```
 
 To check the service status and logs:
@@ -61,12 +81,6 @@ To check the service status and logs:
 ```bash
 $ sudo systemctl status daikin-matter
 $ journalctl -u daikin-matter -f
-```
-
-## Debug
-
-```bash
-$ RUST_LOG=daikin_matter=debug daikin-matter
 ```
 
 ## Controller support
@@ -137,29 +151,11 @@ Pass the key file when using explicit IP addresses. The bridge tries HTTPS first
 $ daikin-matter --local-api-key-file ./local_api_key 192.168.1.150 192.168.1.151 192.168.1.152 192.168.1.153
 ```
 
-For systemd, install the key where only root can read it:
+For systemd, install the key file where only root can read it and point `DAIKIN_LOCAL_API_KEY_FILE` at it in `/etc/daikin-matter/env`:
 
 ```bash
-$ sudo install -d -m0755 /etc/daikin-matter
 $ sudo install -o root -g root -m0600 local_api_key /etc/daikin-matter/local_api_key
-```
-
-Then override the service command with the key file and your adapter IP addresses:
-
-```bash
-$ sudo systemctl edit daikin-matter
-```
-
-```ini
-[Service]
-ExecStart=
-ExecStart=/usr/local/bin/daikin-matter --local-api-key-file /etc/daikin-matter/local_api_key 192.168.1.150 192.168.1.151 192.168.1.152 192.168.1.153
-```
-
-Reload and restart the service after saving the override:
-
-```bash
-$ sudo systemctl daemon-reload
+$ sudo ${EDITOR:-vi} /etc/daikin-matter/env   # set DAIKIN_LOCAL_API_KEY_FILE=/etc/daikin-matter/local_api_key
 $ sudo systemctl restart daikin-matter
 ```
 
