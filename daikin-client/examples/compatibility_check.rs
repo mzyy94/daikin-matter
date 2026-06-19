@@ -3,6 +3,7 @@ use daikin_client::{Daikin, ReqwestClient};
 use dsiot::protocol::property::{Binary, Metadata};
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::net::UdpSocket;
 use tokio::time;
@@ -17,13 +18,30 @@ struct Cli {
     /// IPv4 address of Daikin AC
     #[arg(value_name = "ip_address")]
     ip_addr: String,
+
+    /// File containing the Gen5 local API key for HTTPS adapters
+    #[arg(long, value_name = "PATH")]
+    local_api_key_file: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Transport {
+    Http,
+    Https,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let addr = cli.ip_addr.parse::<Ipv4Addr>()?;
-    run(addr).await
+    let local_api_key = cli
+        .local_api_key_file
+        .as_deref()
+        .map(std::fs::read_to_string)
+        .transpose()?
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    run(addr, local_api_key.as_deref()).await
 }
 
 async fn fetch_udp_info(ip_addr: Ipv4Addr) -> anyhow::Result<HashMap<String, String>> {
@@ -49,7 +67,10 @@ fn line(label: &str, value: impl std::fmt::Display) {
     println!("  {label:<22} {value}");
 }
 
-fn check_adapter_support(udp: &HashMap<String, String>) -> bool {
+fn check_adapter_support(
+    udp: &HashMap<String, String>,
+    has_local_api_key: bool,
+) -> Option<Transport> {
     let api_ver = udp.get("api_ver").map(String::as_str).unwrap_or("?");
     let adp_kind = udp.get("adp_kind").map(String::as_str).unwrap_or("?");
 
@@ -59,38 +80,51 @@ fn check_adapter_support(udp: &HashMap<String, String>) -> bool {
     match (adp_kind, api_ver) {
         ("4", v) if v.starts_with("2_") => {
             println!("  ✅ HTTP DSIOT (supported)");
-            true
+            Some(Transport::Http)
         }
         ("5", v) if v.starts_with("3_") => {
-            println!("  ❌ HTTPS DSIOT with auth (not yet supported)");
-            false
+            if has_local_api_key {
+                println!("  ✅ HTTPS DSIOT with local API key");
+                Some(Transport::Https)
+            } else {
+                println!("  ❌ HTTPS DSIOT requires --local-api-key-file");
+                None
+            }
         }
         _ => {
             println!("  ⚠️  Unknown combination — please report at the issue tracker");
-            false
+            None
         }
     }
 }
 
-async fn run(ip_addr: Ipv4Addr) -> anyhow::Result<()> {
+async fn run(ip_addr: Ipv4Addr, local_api_key: Option<&str>) -> anyhow::Result<()> {
     println!("Daikin Compatibility Check");
     println!("  Target: {ip_addr}");
 
     section("Adapter");
-    match fetch_udp_info(ip_addr).await {
-        Ok(udp) => {
-            if !check_adapter_support(&udp) {
-                return Ok(());
-            }
-        }
+    let transport = match fetch_udp_info(ip_addr).await {
+        Ok(udp) => match check_adapter_support(&udp, local_api_key.is_some()) {
+            Some(t) => t,
+            None => return Ok(()),
+        },
         Err(e) => {
             println!("  ⚠️  UDP probe failed: {e}");
             println!("     Falling back to HTTP-only checks.");
+            Transport::Http
         }
-    }
+    };
 
-    let client = ReqwestClient::try_new()?;
-    let daikin = Daikin::new(ip_addr, client);
+    let client = match transport {
+        Transport::Http => ReqwestClient::try_new()?,
+        Transport::Https => ReqwestClient::try_new_with_local_api_key(
+            local_api_key.expect("HTTPS transport requires a local API key"),
+        )?,
+    };
+    let daikin = match transport {
+        Transport::Http => Daikin::new(ip_addr, client),
+        Transport::Https => Daikin::new_https(ip_addr, client),
+    };
 
     section("Device");
     let info = match daikin.get_info().await {
@@ -152,10 +186,7 @@ async fn run(ip_addr: Ipv4Addr) -> anyhow::Result<()> {
     }
     match &status.mode.metadata {
         Metadata::Binary(Binary::Enum(e)) if e.max == "2F00" => {
-            line(
-                "Mode",
-                format_enum(status.mode.get_enum()),
-            );
+            line("Mode", format_enum(status.mode.get_enum()));
         }
         _ => line("Mode", format!("⚠️  invalid: {:?}", status.mode)),
     }
