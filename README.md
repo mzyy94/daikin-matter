@@ -63,6 +63,55 @@ $ sudo systemctl status daikin-matter
 $ journalctl -u daikin-matter -f
 ```
 
+## Debug
+
+```bash
+$ RUST_LOG=daikin_matter=debug daikin-matter
+```
+
+## Controller support
+
+The bridge exposes the following Matter clusters for each air conditioner:
+
+| Feature | Cluster | Apple Home | Home Assistant |
+|---|---|---|---|
+| Power on/off | `OnOff` | ✅ | ✅ |
+| Mode: Cool / Heat / Auto | `Thermostat` | ✅ | ✅ |
+| Mode: Fan / Dry | `Thermostat` | ❌ | ❌ |
+| Target temperature (not available in Auto mode) | `Thermostat` | ✅ | ✅ |
+| Room temperature | `Thermostat` | ✅ | ✅ |
+| Outdoor temperature | `Thermostat` | ❌ | ✅ |
+| Fan speed | `FanControl` | ❌ | ✅ |
+| Swing (vertical/horizontal, toggles with auto) | `FanControl` | ❌ | ✅ |
+| Wind direction | (not in cluster) | ❌ | ❌ |
+| Humidity | `RelativeHumidityMeasurement` | ❌ | ✅ |
+| Power consumption (W) | `ElectricalPowerMeasurement` | ❌ | ✅ |
+| Wi-Fi signal strength (RSSI) | `WiFiNetworkDiagnostics` | ❌ | ❌ |
+
+Apple Home has limited support for Room Air Conditioner device type. Only basic thermostat and power controls are available. Home Assistant's Matter integration provides access to more features including fan control and sensor readings, but Fan/Dry modes are hidden by the vendor-level UI filtering.
+
+Tested with iOS 26.4.2, Home Assistant 2026.4.3, and Daikin AC firmware 3.11.0.
+
+## Compatibility
+
+The app is compatible with year 2022 or later model Daikin Air Conditioners that use the HTTP DSIOT protocol (`adp_kind=4`, `api_ver=2_*`).
+It has been tested on 2022-model of [Daikin risora] which has built-in Wi-Fi module.
+
+[Daikin risora]: https://www.ac.daikin.co.jp/kabekake/products/sx_series
+
+> [!NOTE]
+> Newer Daikin models ship with a Gen5 Wi-Fi adapter (`adp_kind=5`, `api_ver=3_0`) that exposes only an HTTPS DSIOT endpoint with authentication. These are supported with the `--local-api-key-file` flag. See [Generation5 HTTPS adapters](#generation5-https-adapters) for more details.
+
+To check compatibility, run the command below..
+
+```bash
+$ cargo run --example compatibility_check <your device ip address>
+# Gen5 HTTPS model
+$ cargo run --example compatibility_check -- --local-api-key-file ./local_api_key <your device ip address>
+```
+
+![compatibility_check](/docs/compatibility_check.png)
+
 ## Generation5 HTTPS adapters
 
 Generation5 adapters (2026 RX / RX-series HTTPS-only adapters) require a local API key.
@@ -113,55 +162,6 @@ Reload and restart the service after saving the override:
 $ sudo systemctl daemon-reload
 $ sudo systemctl restart daikin-matter
 ```
-
-## Debug
-
-```bash
-$ RUST_LOG=daikin_matter=debug daikin-matter
-```
-
-## Controller support
-
-The bridge exposes the following Matter clusters for each air conditioner:
-
-| Feature | Cluster | Apple Home | Home Assistant |
-|---|---|---|---|
-| Power on/off | `OnOff` | ✅ | ✅ |
-| Mode: Cool / Heat / Auto | `Thermostat` | ✅ | ✅ |
-| Mode: Fan / Dry | `Thermostat` | ❌ | ❌ |
-| Target temperature (not available in Auto mode) | `Thermostat` | ✅ | ✅ |
-| Room temperature | `Thermostat` | ✅ | ✅ |
-| Outdoor temperature | `Thermostat` | ❌ | ✅ |
-| Fan speed | `FanControl` | ❌ | ✅ |
-| Swing (vertical/horizontal, toggles with auto) | `FanControl` | ❌ | ✅ |
-| Wind direction | (not in cluster) | ❌ | ❌ |
-| Humidity | `RelativeHumidityMeasurement` | ❌ | ✅ |
-| Power consumption (W) | `ElectricalPowerMeasurement` | ❌ | ✅ |
-| Wi-Fi signal strength (RSSI) | `WiFiNetworkDiagnostics` | ❌ | ❌ |
-
-Apple Home has limited support for Room Air Conditioner device type. Only basic thermostat and power controls are available. Home Assistant's Matter integration provides access to more features including fan control and sensor readings, but Fan/Dry modes are hidden by the vendor-level UI filtering.
-
-Tested with iOS 26.4.2, Home Assistant 2026.4.3, and Daikin AC firmware 3.11.0.
-
-## Compatibility
-
-The app is compatible with year 2022 or later model Daikin Air Conditioners that use the HTTP DSIOT protocol (`adp_kind=4`, `api_ver=2_*`).
-It has been tested on [Daikin risora] which has built-in Wi-Fi modules and an IR remote control like the following.
-
-[Daikin risora]: https://www.ac.daikin.co.jp/kabekake/products/sx_series
-
-<img alt="risora ir remote display" src="/docs/remote.png" width="540">
-
-> [!WARNING]
-> Newer Daikin models ship with a different Wi-Fi adapter (`adp_kind=5`, `api_ver=3_0`) that exposes only an HTTPS DSIOT endpoint with authentication. These devices are **not yet supported**.
-
-To check compatibility, run the command below.
-
-```bash
-$ cargo run --example compatibility_check <your device ip address>
-```
-
-![compatibility_check](/docs/compatibility_check.png)
 
 ## License
 
