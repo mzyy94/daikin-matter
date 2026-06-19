@@ -4,11 +4,12 @@ permissions:
   contents: write
 
 on:
-  push:
-    tags: [ "v*" ]
+  release:
+    types: [published]
 
 env:
   CARGO_TERM_COLOR: always
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   build:
@@ -30,27 +31,16 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
     - run: rustup toolchain install 1.95 && rustup default 1.95
     - run: cargo build --verbose --release --no-default-features --features ${{ matrix.features }}
-    - uses: actions/upload-artifact@v7.0.1
-      with:
-        name: daikin-matter_${{ matrix.os }}
-        path: target/release/daikin-matter
-
-  release:
-    needs: [build]
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/download-artifact@v8.0.1
-    - run: ls -R
-    - run: |
-        chmod +x daikin-matter_macos-latest/daikin-matter
-        tar zcvf daikin-matter_macos-latest.tar.gz daikin-matter_macos-latest
-        chmod +x daikin-matter_ubuntu-24.04/daikin-matter
-        tar zcvf daikin-matter_ubuntu-24.04.tar.gz daikin-matter_ubuntu-24.04
-        chmod +x daikin-matter_ubuntu-24.04-arm/daikin-matter
-        tar zcvf daikin-matter_ubuntu-24.04-arm.tar.gz daikin-matter_ubuntu-24.04-arm
-    - uses: softprops/action-gh-release@v3.0.0
-      with:
-        files: |
-          daikin-matter_macos-latest.tar.gz
-          daikin-matter_ubuntu-24.04.tar.gz
-          daikin-matter_ubuntu-24.04-arm.tar.gz
+    - if: startsWith(matrix.os, 'macos')
+      name: Upload binary
+      env:
+        ASSET: daikin-matter-${{ matrix.os }}
+      run: |
+        cp target/release/daikin-matter "$ASSET"
+        gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
+    - if: startsWith(matrix.os, 'ubuntu')
+      name: Build and upload .deb
+      run: |
+        cargo install cargo-deb --locked
+        cargo deb -p daikin-matter --no-build
+        gh release upload "$GITHUB_REF_NAME" target/debian/*.deb --clobber

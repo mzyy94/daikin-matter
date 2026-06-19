@@ -15,6 +15,17 @@ astro-dnssd = ["rs-matter/astro-dnssd"]
 avahi = ["rs-matter/zbus"]
 builtin-mdns = ["dep:nix", "dep:socket2"]
 
+[package.metadata.deb]
+maintainer = "mzyy94 <mzyy94@users.noreply.github.com>"
+section = "net"
+priority = "optional"
+assets = [
+    ["target/release/daikin-matter", "usr/local/bin/", "755"],
+    ["../daikin-matter.env.example", "etc/daikin-matter/env", "600"],
+]
+maintainer-scripts = "../packaging/deb/"
+systemd-units = {}
+
 [dependencies]
 anyhow = "1.0"
 async-io = "2"
