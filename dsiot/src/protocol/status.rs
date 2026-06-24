@@ -63,6 +63,21 @@ pub struct WindSettings {
     pub auto: AutoModeWindSettings,
 }
 
+/// Cumulative energy history exposed by Daikin's i_power adapter.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct PowerHistory {
+    /// Cumulative runtime today (minutes).
+    pub today_runtime: Item<f32>,
+    /// Past 7 days of energy use (Wh). Index 0 = today.
+    pub week: Item<f32>,
+    /// Alternate 7-day series
+    pub week_alt: Item<f32>,
+    /// Monthly energy use for the previous calendar year (Wh).
+    pub year_previous: Item<f32>,
+    /// Monthly energy use for the current calendar year so far (Wh).
+    pub year_this: Item<f32>,
+}
+
 /// Complete device status containing all readable and writable properties.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DaikinStatus {
@@ -78,6 +93,8 @@ pub struct DaikinStatus {
     pub wind: WindSettings,
     /// Instantaneous power consumption in watts (requires en_ipower).
     pub power_consumption: Item<f32>,
+    /// Cumulative energy history (i_power adapter). Empty Items when en_ipower is off.
+    pub power_history: PowerHistory,
 }
 
 impl From<DaikinResponse> for DaikinStatus {
@@ -123,6 +140,13 @@ impl From<DaikinResponse> for DaikinStatus {
                 },
             },
             power_consumption: get_prop!(response."/dsiot/edge/adr_0200.dgc_status".e_1003.e_A005.p_01),
+            power_history: PowerHistory {
+                today_runtime: get_prop!(response."/dsiot/edge".adr_0100.i_power.week_power.today_runtime),
+                week: get_prop!(response."/dsiot/edge".adr_0100.i_power.week_power.datas),
+                week_alt: get_prop!(response."/dsiot/edge".adr_0100.i_power.week_power.datas2),
+                year_previous: get_prop!(response."/dsiot/edge".adr_0100.i_power.year_power.previous_year),
+                year_this: get_prop!(response."/dsiot/edge".adr_0100.i_power.year_power.this_year),
+            },
         }
     }
 }

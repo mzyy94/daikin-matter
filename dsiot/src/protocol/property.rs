@@ -208,6 +208,17 @@ impl<T: PropTag> Item<T> {
         }
     }
 
+    pub fn get_int_list(&self) -> Option<&[i32]> {
+        match self {
+            Item {
+                value: PropValue::IntegerList(pv),
+                metadata: Metadata::IntegerList,
+                ..
+            } => Some(pv),
+            _ => None,
+        }
+    }
+
     pub fn get_enum(&self) -> Option<T>
     where
         T: TryFrom<u8>,

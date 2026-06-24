@@ -150,6 +150,10 @@ impl<H: HttpClient> Daikin<H> {
             {
                 "op": 2,
                 "to": "/dsiot/edge/adr_0200.dgc_status?filter=pv,md"
+            },
+            {
+                "op": 2,
+                "to": "/dsiot/edge"
             }
         ]});
 
