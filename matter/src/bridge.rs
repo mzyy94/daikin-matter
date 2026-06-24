@@ -1,5 +1,6 @@
 use dsiot::protocol::DaikinInfo;
 use rs_matter::dm::clusters::decl::bridged_device_basic_information;
+use rs_matter::dm::clusters::decl::electrical_energy_measurement;
 use rs_matter::dm::clusters::decl::electrical_power_measurement;
 use rs_matter::dm::clusters::decl::fan_control as rs_fan_control;
 use rs_matter::dm::clusters::decl::power_topology as rs_power_topology;
@@ -18,7 +19,9 @@ use rs_matter::{clusters, devices, root_endpoint};
 
 use crate::bridged_info::BridgedInfo;
 use crate::identify::StubIdentify;
-use crate::{device, fan_control, humidity, onoff, power, power_topology, thermostat, wifi_diag};
+use crate::{
+    device, energy, fan_control, humidity, onoff, power, power_topology, thermostat, wifi_diag,
+};
 
 pub(crate) const DEV_TYPE_ROOM_AC: DeviceType = DeviceType {
     dtype: 0x0072,
@@ -72,6 +75,7 @@ const BRIDGED_EP_POWER: Endpoint<'static> = Endpoint {
         humidity::HumidityHandler::CLUSTER,
         power_topology::PowerTopologyHandler::CLUSTER,
         power::PowerHandler::CLUSTER,
+        energy::EnergyHandler::CLUSTER,
         wifi_diag::WifiDiagHandler::CLUSTER
     ),
     client_clusters: &[],
@@ -107,6 +111,7 @@ pub(crate) struct BridgedDevice {
     pub(crate) humidity: humidity::HumidityHandler,
     pub(crate) power: Option<power::PowerHandler>,
     pub(crate) power_topology: Option<power_topology::PowerTopologyHandler>,
+    pub(crate) energy: Option<energy::EnergyHandler>,
     pub(crate) wifi_diag: wifi_diag::WifiDiagHandler,
     pub(crate) device: device::Device,
 }
@@ -119,7 +124,7 @@ impl BridgedDevice {
         device: device::Device,
         info: DaikinInfo,
     ) -> Self {
-        let (power, power_topology) = if info.en_ipower {
+        let (power, power_topology, energy) = if info.en_ipower {
             (
                 Some(power::PowerHandler::new(
                     Dataver::new_rand(rand),
@@ -128,9 +133,13 @@ impl BridgedDevice {
                 Some(power_topology::PowerTopologyHandler::new(
                     Dataver::new_rand(rand),
                 )),
+                Some(energy::EnergyHandler::new(
+                    Dataver::new_rand(rand),
+                    device.clone(),
+                )),
             )
         } else {
-            (None, None)
+            (None, None, None)
         };
         let wifi_diag =
             wifi_diag::WifiDiagHandler::new(Dataver::new_rand(rand), info, device.clone());
@@ -145,6 +154,7 @@ impl BridgedDevice {
             humidity: humidity::HumidityHandler::new(Dataver::new_rand(rand), device.clone()),
             power,
             power_topology,
+            energy,
             wifi_diag,
             device,
         }
@@ -167,6 +177,7 @@ impl BridgeHandler {
         notifier.notify_attr_changed(ep, humidity::HumidityHandler::CLUSTER.id, 0);
         if self.find(ep).is_some_and(|d| d.power.is_some()) {
             notifier.notify_attr_changed(ep, power::PowerHandler::CLUSTER.id, 0);
+            notifier.notify_attr_changed(ep, energy::EnergyHandler::CLUSTER.id, 0);
         }
     }
 }
@@ -214,6 +225,11 @@ impl Handler for BridgeHandler {
         } else if cl == power_topology::PowerTopologyHandler::CLUSTER.id {
             match &dev.power_topology {
                 Some(p) => rs_power_topology::HandlerAdaptor(p).read(ctx, reply),
+                None => Err(ErrorCode::ClusterNotFound.into()),
+            }
+        } else if cl == energy::EnergyHandler::CLUSTER.id {
+            match &dev.energy {
+                Some(e) => electrical_energy_measurement::HandlerAdaptor(e).read(ctx, reply),
                 None => Err(ErrorCode::ClusterNotFound.into()),
             }
         } else if cl == wifi_diag::WifiDiagHandler::CLUSTER.id {
@@ -306,6 +322,11 @@ impl Handler for BridgeHandler {
             #[allow(clippy::collapsible_if)]
             if let Some(p) = &dev.power_topology {
                 p.dataver.changed();
+            }
+        } else if cl == energy::EnergyHandler::CLUSTER.id {
+            #[allow(clippy::collapsible_if)]
+            if let Some(e) = &dev.energy {
+                e.dataver.changed();
             }
         }
     }

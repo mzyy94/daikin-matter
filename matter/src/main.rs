@@ -4,6 +4,7 @@ extern crate log;
 mod bridge;
 mod bridged_info;
 mod device;
+mod energy;
 mod fan_control;
 mod humidity;
 mod identify;
