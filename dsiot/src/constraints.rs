@@ -32,9 +32,9 @@ impl ValueConstraints {
             Metadata::Binary(Binary::Step(step)) => {
                 let range = step.range();
                 Some(Self {
-                    min: *range.start(),
-                    max: *range.end(),
-                    step: step.step(),
+                    min: *range.start() as f32,
+                    max: *range.end() as f32,
+                    step: step.step() as f32,
                 })
             }
             _ => None,

@@ -167,9 +167,8 @@ impl<T: PropTag> Item<T> {
                 metadata: Metadata::Binary(Binary::Step(step)),
                 ..
             } => {
-                let value = hex2int(pv)? as f32;
-                let step = step.step();
-                Some(value * step)
+                let value = hex2int(pv)? as f64;
+                Some((value * step.step()) as f32)
             }
             _ => None,
         }
@@ -182,7 +181,7 @@ impl<T: PropTag> Item<T> {
                 Ok(())
             }
             Metadata::Binary(Binary::Step(step)) => {
-                let value = (value.into() / step.step()) as i64;
+                let value = (f64::from(value.into()) / step.step()) as i64;
                 let bytes = value.to_le_bytes();
                 self.value = PropValue::String(hex::encode(&bytes[..(step.max.len() / 2)]));
                 Ok(())
@@ -361,19 +360,19 @@ pub struct BinaryStep {
 }
 
 impl BinaryStep {
-    pub fn step(&self) -> f32 {
+    pub fn step(&self) -> f64 {
         let step = self.step;
-        let step_base = f32::from(step & 0xf);
+        let step_base = f64::from(step & 0xf);
         let exp: i8 = (step & 0xf0) as i8 >> 4;
-        let step_coefficient = libm::powf(10.0, exp as f32);
+        let step_coefficient = libm::pow(10.0, exp as f64);
         step_base * step_coefficient
     }
 
-    pub fn range(&self) -> RangeInclusive<f32> {
+    pub fn range(&self) -> RangeInclusive<f64> {
         let BinaryStep { min, max, step } = self;
         let step = if *step == 0 { 1.0 } else { self.step() };
-        let min_value = hex2int(min).unwrap_or(0) as f32 * step;
-        let max_value = hex2int(max).unwrap_or(0) as f32 * step;
+        let min_value = hex2int(min).unwrap_or(0) as f64 * step;
+        let max_value = hex2int(max).unwrap_or(0) as f64 * step;
         RangeInclusive::new(min_value, max_value)
     }
 }
