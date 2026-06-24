@@ -40,7 +40,7 @@ log = "0.4"
 rand = "0.8"
 static_cell = "2"
 tokio = { version = "1", features = ["full"] }
-rs-matter = { git = "https://github.com/project-chip/matter-rs", features = ["async-io"] }
+rs-matter = { git = "https://github.com/project-chip/matter-rs", features = ["async-io", "log"] }
 nix = { version = "0.31", features = ["net"], optional = true }
 socket2 = { version = "0.6", optional = true }
 dsiot = { path = "../dsiot" }
