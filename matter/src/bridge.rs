@@ -171,13 +171,13 @@ impl BridgeHandler {
     }
 
     fn notify_all_clusters(&self, ep: u16, notifier: &dyn AttrChangeNotifier) {
-        notifier.notify_attr_changed(ep, onoff::OnOffHandler::CLUSTER.id, 0);
-        notifier.notify_attr_changed(ep, thermostat::ThermostatHandler::CLUSTER.id, 0);
-        notifier.notify_attr_changed(ep, fan_control::FanControlHandler::CLUSTER.id, 0);
-        notifier.notify_attr_changed(ep, humidity::HumidityHandler::CLUSTER.id, 0);
+        notifier.notify_cluster_changed(ep, onoff::OnOffHandler::CLUSTER.id);
+        notifier.notify_cluster_changed(ep, thermostat::ThermostatHandler::CLUSTER.id);
+        notifier.notify_cluster_changed(ep, fan_control::FanControlHandler::CLUSTER.id);
+        notifier.notify_cluster_changed(ep, humidity::HumidityHandler::CLUSTER.id);
         if self.find(ep).is_some_and(|d| d.power.is_some()) {
-            notifier.notify_attr_changed(ep, power::PowerHandler::CLUSTER.id, 0);
-            notifier.notify_attr_changed(ep, energy::EnergyHandler::CLUSTER.id, 0);
+            notifier.notify_cluster_changed(ep, power::PowerHandler::CLUSTER.id);
+            notifier.notify_cluster_changed(ep, energy::EnergyHandler::CLUSTER.id);
         }
     }
 }

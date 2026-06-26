@@ -179,7 +179,7 @@ pub(crate) fn run_matter(
                         let mut changed = Vec::new();
                         if old.is_none_or(|o| o.power != status.power || o.mode != status.mode) {
                             dev.on_off.dataver.changed();
-                            dm.notify_attr_changed(dev.ep_id, onoff::OnOffHandler::CLUSTER.id, 0);
+                            dm.notify_cluster_changed(dev.ep_id, onoff::OnOffHandler::CLUSTER.id);
                             changed.push("OnOff");
                         }
                         if old.is_none_or(|o| {
@@ -190,28 +190,25 @@ pub(crate) fn run_matter(
                                     != status.sensors.outdoor_temperature
                         }) {
                             dev.therm.dataver.changed();
-                            dm.notify_attr_changed(
+                            dm.notify_cluster_changed(
                                 dev.ep_id,
                                 thermostat::ThermostatHandler::CLUSTER.id,
-                                0,
                             );
                             changed.push("Thermostat");
                         }
                         if old.is_none_or(|o| o.wind != status.wind || o.mode != status.mode) {
                             dev.fan_ctl.dataver.changed();
-                            dm.notify_attr_changed(
+                            dm.notify_cluster_changed(
                                 dev.ep_id,
                                 fan_control::FanControlHandler::CLUSTER.id,
-                                0,
                             );
                             changed.push("FanControl");
                         }
                         if old.is_none_or(|o| o.sensors.humidity != status.sensors.humidity) {
                             dev.humidity.dataver.changed();
-                            dm.notify_attr_changed(
+                            dm.notify_cluster_changed(
                                 dev.ep_id,
                                 humidity::HumidityHandler::CLUSTER.id,
-                                0,
                             );
                             changed.push("Humidity");
                         }
@@ -219,7 +216,7 @@ pub(crate) fn run_matter(
                             && old.is_none_or(|o| o.power_consumption != status.power_consumption)
                         {
                             p.dataver.changed();
-                            dm.notify_attr_changed(dev.ep_id, power::PowerHandler::CLUSTER.id, 0);
+                            dm.notify_cluster_changed(dev.ep_id, power::PowerHandler::CLUSTER.id);
                             changed.push("Power");
                         }
                         if changed.is_empty() {
@@ -234,7 +231,7 @@ pub(crate) fn run_matter(
                 let reachable_now = dev.device.is_reachable();
                 if reachable_now != reachable_before {
                     dev.bridged_info.dataver.changed();
-                    dm.notify_attr_changed(dev.ep_id, bridged_info::BridgedInfo::CLUSTER.id, 0);
+                    dm.notify_cluster_changed(dev.ep_id, bridged_info::BridgedInfo::CLUSTER.id);
                     info!(
                         "Poll ep {}: reachable {} → {}",
                         dev.ep_id, reachable_before, reachable_now
