@@ -3,7 +3,7 @@ members = ["matter", "dsiot", "daikin-client"]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.4"
+version = "0.3.5"
 edition = "2024"
 authors = ["mzyy94"]
 rust-version = "1.95"
