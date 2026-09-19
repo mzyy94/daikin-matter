@@ -9,7 +9,7 @@ license.workspace = true
 keywords = ["daikin", "hvac", "iot"]
 
 [dependencies]
-dsiot = { path = "../dsiot", version = "0.3.1" }
+dsiot = { workspace = true }
 anyhow = "1.0"
 reqwest = { version = "0.13.1", features = ["json"] }
 serde_json = "1.0.149"

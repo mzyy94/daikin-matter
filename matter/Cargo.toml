@@ -43,5 +43,5 @@ tokio = { version = "1", features = ["full"] }
 rs-matter = { git = "https://github.com/project-chip/matter-rs", features = ["async-io", "log"] }
 nix = { version = "0.31", features = ["net"], optional = true }
 socket2 = { version = "0.6", optional = true }
-dsiot = { path = "../dsiot" }
-daikin-client = { path = "../daikin-client" }
+dsiot = { workspace = true }
+daikin-client = { workspace = true }
