@@ -12,7 +12,7 @@ use rs_matter::dm::clusters::desc::{self, ClusterHandler as _};
 use rs_matter::dm::devices::{DEV_TYPE_AGGREGATOR, DEV_TYPE_BRIDGED_NODE};
 use rs_matter::dm::{
     AttrChangeNotifier, Dataver, DeviceType, Endpoint, Handler, InvokeContext, InvokeReply,
-    MatchContext, Matcher, Node, NonBlockingHandler, ReadContext, ReadReply, WriteContext,
+    MatchContext, Node, NonBlockingHandler, ReadContext, ReadReply, WriteContext,
 };
 use rs_matter::error::{Error, ErrorCode};
 use rs_matter::{clusters, devices, root_endpoint};
@@ -40,6 +40,8 @@ const AGGREGATOR_EP: Endpoint<'static> = Endpoint {
     device_types: devices!(DEV_TYPE_AGGREGATOR),
     clusters: clusters!(desc::DescHandler::CLUSTER),
     client_clusters: &[],
+    unique_id: None,
+    semantic_tags: &[],
 };
 
 const BRIDGED_EP: Endpoint<'static> = Endpoint {
@@ -56,6 +58,8 @@ const BRIDGED_EP: Endpoint<'static> = Endpoint {
         wifi_diag::WifiDiagHandler::CLUSTER
     ),
     client_clusters: &[],
+    unique_id: None,
+    semantic_tags: &[],
 };
 
 const BRIDGED_EP_POWER: Endpoint<'static> = Endpoint {
@@ -79,6 +83,8 @@ const BRIDGED_EP_POWER: Endpoint<'static> = Endpoint {
         wifi_diag::WifiDiagHandler::CLUSTER
     ),
     client_clusters: &[],
+    unique_id: None,
+    semantic_tags: &[],
 };
 
 pub(crate) fn build_node(devices: &[(u16, bool)]) -> Node<'static> {
@@ -119,7 +125,7 @@ pub(crate) struct BridgedDevice {
 impl BridgedDevice {
     pub(crate) fn new(
         ep_id: u16,
-        rand: &mut impl rand::RngCore,
+        rand: &mut impl rand::Rng,
         bridged_info: BridgedInfo,
         device: device::Device,
         info: DaikinInfo,
@@ -179,15 +185,6 @@ impl BridgeHandler {
             notifier.notify_cluster_changed(ep, power::PowerHandler::CLUSTER.id);
             notifier.notify_cluster_changed(ep, energy::EnergyHandler::CLUSTER.id);
         }
-    }
-}
-
-/// Matches any bridged endpoint (id >= 2).
-pub(crate) struct BridgedMatcher;
-
-impl Matcher for BridgedMatcher {
-    fn matches(&self, ctx: impl MatchContext) -> bool {
-        ctx.endpt().is_some_and(|e| e >= 2)
     }
 }
 

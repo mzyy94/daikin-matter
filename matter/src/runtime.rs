@@ -15,35 +15,26 @@ use static_cell::StaticCell;
 use rs_matter::crypto::{Crypto, CryptoSensitive, CryptoSensitiveRef, default_crypto};
 use rs_matter::dm::clusters::basic_info::BasicInfoConfig;
 use rs_matter::dm::clusters::desc::{self, ClusterHandler as _};
-use rs_matter::dm::clusters::dev_att::DeviceAttestation;
-use rs_matter::dm::clusters::net_comm::SharedNetworks;
-use rs_matter::dm::devices::test::TEST_DEV_ATT;
-use rs_matter::dm::events::NoEvents;
+use rs_matter::dm::devices::test::{DAC_PRIVKEY, TEST_DEV_ATT};
 use rs_matter::dm::networks::eth::EthNetwork;
 use rs_matter::dm::networks::unix::UnixNetifs;
-use rs_matter::dm::subscriptions::Subscriptions;
-use rs_matter::dm::{
-    Async, AttrChangeNotifier, DataModel, DataModelHandler, Dataver, EpClMatcher, IMBuffer, Node,
-    endpoints,
-};
+use rs_matter::dm::{Async, AttrChangeNotifier, DataModel, Dataver, Node, endpoints};
+use rs_matter::im::{EthInteractionModelState, InteractionModel};
 use rs_matter::pairing::{DiscoveryCapabilities, qr::QrTextType};
-use rs_matter::persist::{DirKvBlobStore, SharedKvBlobStore};
+use rs_matter::persist::DirKvBlobStore;
 use rs_matter::respond::DefaultResponder;
 use rs_matter::sc::pase::MAX_COMM_WINDOW_TIMEOUT_SECS;
 use rs_matter::transport::MATTER_SOCKET_BIND_ADDR;
+use rs_matter::transport::exchange::MatterBuffers;
 use rs_matter::utils::init::InitMaybeUninit;
 use rs_matter::utils::select::Coalesce;
-use rs_matter::utils::storage::pooled::PooledBuffers;
 use rs_matter::{MATTER_PORT, Matter};
 
-use crate::bridge::{self, BridgeHandler, BridgedMatcher};
+use crate::bridge::{self, BridgeHandler};
 use crate::mdns::run_mdns;
 use crate::{bridged_info, device, fan_control, humidity, onoff, power, thermostat};
 
 static MATTER: StaticCell<Matter> = StaticCell::new();
-static BUFFERS: StaticCell<PooledBuffers<32, IMBuffer>> = StaticCell::new();
-static SUBSCRIPTIONS: StaticCell<Subscriptions> = StaticCell::new();
-static KV_BUF: StaticCell<[u8; 4096]> = StaticCell::new();
 
 const COMM_DATA: rs_matter::BasicCommData = rs_matter::BasicCommData {
     password: CryptoSensitive::new_from_ref(CryptoSensitiveRef::new(&20230420_u32.to_le_bytes())),
@@ -66,11 +57,11 @@ const BRIDGE_DEV_DET: BasicInfoConfig<'static> = BasicInfoConfig {
     ..BasicInfoConfig::new()
 };
 
-fn dm_handler<'a>(
-    mut rand: impl rand::RngCore,
+fn data_model<'a>(
+    mut rand: impl rand::Rng + Copy,
     bridge: &'a BridgeHandler,
     node: Node<'static>,
-) -> impl DataModelHandler + 'a {
+) -> impl DataModel + 'a {
     let agg_desc_dataver = Dataver::new_rand(&mut rand);
 
     (
@@ -79,10 +70,10 @@ fn dm_handler<'a>(
             .netif_diag(&UnixNetifs)
             .build(rand)
             .chain(
-                EpClMatcher::new(Some(1), Some(desc::DescHandler::CLUSTER.id)),
+                |e, c| e == 1 && c == desc::DescHandler::CLUSTER.id,
                 Async(desc::DescHandler::new_aggregator(agg_desc_dataver).adapt()),
             )
-            .chain(BridgedMatcher, Async(bridge)),
+            .chain(|e, _c| e >= 2, Async(bridge)),
     )
 }
 
@@ -98,14 +89,15 @@ pub(crate) fn run_matter(
         MATTER_PORT,
     ));
 
-    let kv_buf = KV_BUF.uninit().init_zeroed().as_mut_slice();
-    let mut kv = DirKvBlobStore::new(data_dir);
-    futures_lite::future::block_on(matter.load_persist(&mut kv, kv_buf))?;
+    let store = DirKvBlobStore::new(data_dir);
+    let kv = matter.kv(store);
 
-    let buffers = BUFFERS.uninit().init_with(PooledBuffers::init(0));
-    let subscriptions: &Subscriptions = SUBSCRIPTIONS.uninit().init_with(Subscriptions::init());
+    let buffers: MatterBuffers = MatterBuffers::new();
+    let state: EthInteractionModelState = EthInteractionModelState::new(EthNetwork::new_default());
 
-    let crypto = default_crypto(rand::thread_rng(), TEST_DEV_ATT.dac_priv_key());
+    matter.startup(&kv)?;
+
+    let crypto = default_crypto(rand::rng(), DAC_PRIVKEY);
     let mut rand = crypto.rand()?;
 
     let mut devices = Vec::with_capacity(connections.len());
@@ -137,32 +129,30 @@ pub(crate) fn run_matter(
     let bridge_handler = BridgeHandler { devices };
     let node = bridge::build_node(&ep_devs);
 
-    let events = NoEvents::new();
-
-    let dm = DataModel::new(
+    let im = InteractionModel::new(
         matter,
         &crypto,
-        buffers,
-        subscriptions,
-        &events,
-        dm_handler(rand, &bridge_handler, node),
-        SharedKvBlobStore::new(kv, kv_buf),
-        SharedNetworks::new(EthNetwork::new_default()),
+        &buffers,
+        data_model(rand, &bridge_handler, node),
+        &kv,
+        &state,
     );
 
-    let responder = DefaultResponder::new(&dm);
+    futures_lite::future::block_on(im.startup())?;
+
+    let responder = DefaultResponder::new(&im);
     let mut respond = pin!(responder.run::<16, 4>());
-    let mut dm_job = pin!(dm.run());
+    let mut im_job = pin!(im.run());
 
     let socket = async_io::Async::<UdpSocket>::bind(MATTER_SOCKET_BIND_ADDR)?;
 
-    let mut mdns = pin!(run_mdns(matter));
+    let mut mdns = pin!(run_mdns(matter, &crypto));
     let mut transport = pin!(matter.run(&crypto, &socket, &socket, &socket));
 
-    if !matter.is_commissioned() {
+    if !matter.has_fabrics() {
         matter.print_standard_qr_text(DiscoveryCapabilities::IP)?;
         matter.print_standard_qr_code(QrTextType::Unicode, DiscoveryCapabilities::IP)?;
-        dm.open_basic_comm_window(MAX_COMM_WINDOW_TIMEOUT_SECS)?;
+        matter.open_basic_comm_window(MAX_COMM_WINDOW_TIMEOUT_SECS, &crypto, &())?;
     }
 
     info!("Matter stack running ({} device(s))", ep_devs.len());
@@ -179,7 +169,7 @@ pub(crate) fn run_matter(
                         let mut changed = Vec::new();
                         if old.is_none_or(|o| o.power != status.power || o.mode != status.mode) {
                             dev.on_off.dataver.changed();
-                            dm.notify_cluster_changed(dev.ep_id, onoff::OnOffHandler::CLUSTER.id);
+                            im.notify_cluster_changed(dev.ep_id, onoff::OnOffHandler::CLUSTER.id);
                             changed.push("OnOff");
                         }
                         if old.is_none_or(|o| {
@@ -190,7 +180,7 @@ pub(crate) fn run_matter(
                                     != status.sensors.outdoor_temperature
                         }) {
                             dev.therm.dataver.changed();
-                            dm.notify_cluster_changed(
+                            im.notify_cluster_changed(
                                 dev.ep_id,
                                 thermostat::ThermostatHandler::CLUSTER.id,
                             );
@@ -198,7 +188,7 @@ pub(crate) fn run_matter(
                         }
                         if old.is_none_or(|o| o.wind != status.wind || o.mode != status.mode) {
                             dev.fan_ctl.dataver.changed();
-                            dm.notify_cluster_changed(
+                            im.notify_cluster_changed(
                                 dev.ep_id,
                                 fan_control::FanControlHandler::CLUSTER.id,
                             );
@@ -206,7 +196,7 @@ pub(crate) fn run_matter(
                         }
                         if old.is_none_or(|o| o.sensors.humidity != status.sensors.humidity) {
                             dev.humidity.dataver.changed();
-                            dm.notify_cluster_changed(
+                            im.notify_cluster_changed(
                                 dev.ep_id,
                                 humidity::HumidityHandler::CLUSTER.id,
                             );
@@ -216,7 +206,7 @@ pub(crate) fn run_matter(
                             && old.is_none_or(|o| o.power_consumption != status.power_consumption)
                         {
                             p.dataver.changed();
-                            dm.notify_cluster_changed(dev.ep_id, power::PowerHandler::CLUSTER.id);
+                            im.notify_cluster_changed(dev.ep_id, power::PowerHandler::CLUSTER.id);
                             changed.push("Power");
                         }
                         if changed.is_empty() {
@@ -231,7 +221,7 @@ pub(crate) fn run_matter(
                 let reachable_now = dev.device.is_reachable();
                 if reachable_now != reachable_before {
                     dev.bridged_info.dataver.changed();
-                    dm.notify_cluster_changed(dev.ep_id, bridged_info::BridgedInfo::CLUSTER.id);
+                    im.notify_cluster_changed(dev.ep_id, bridged_info::BridgedInfo::CLUSTER.id);
                     info!(
                         "Poll ep {}: reachable {} → {}",
                         dev.ep_id, reachable_before, reachable_now
@@ -242,7 +232,7 @@ pub(crate) fn run_matter(
         }
     });
 
-    let mut core = pin!(select4(&mut transport, &mut mdns, &mut respond, &mut dm_job).coalesce());
+    let mut core = pin!(select4(&mut transport, &mut mdns, &mut respond, &mut im_job).coalesce());
     let all = select(&mut core, &mut poll).coalesce();
     futures_lite::future::block_on(all)?;
 

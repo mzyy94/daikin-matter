@@ -42,8 +42,7 @@ impl EnergyHandler {
     }
 
     fn sum_wh(list: Option<&[i32]>) -> i64 {
-        list.map(|v| v.iter().map(|&x| x as i64).sum())
-            .unwrap_or(0)
+        list.map(|v| v.iter().map(|&x| x as i64).sum()).unwrap_or(0)
     }
 }
 

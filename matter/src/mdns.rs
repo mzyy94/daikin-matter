@@ -1,6 +1,7 @@
 //! mDNS responder variants gated by Cargo feature.
 
 use rs_matter::Matter;
+use rs_matter::crypto::Crypto;
 use rs_matter::error::Error;
 
 #[cfg(all(
@@ -8,14 +9,14 @@ use rs_matter::error::Error;
     not(feature = "avahi"),
     not(feature = "builtin-mdns")
 ))]
-pub(crate) async fn run_mdns(matter: &Matter<'_>) -> Result<(), Error> {
+pub async fn run_mdns<C: Crypto>(matter: &Matter<'_>, _crypto: C) -> Result<(), Error> {
     rs_matter::transport::network::mdns::astro::AstroMdns::new()
         .run(matter)
         .await
 }
 
 #[cfg(all(feature = "avahi", not(feature = "builtin-mdns")))]
-pub(crate) async fn run_mdns(matter: &Matter<'_>) -> Result<(), Error> {
+pub async fn run_mdns<C: Crypto>(matter: &Matter<'_>, _crypto: C) -> Result<(), Error> {
     let connection = rs_matter::utils::zbus::Connection::system().await.unwrap();
     rs_matter::transport::network::mdns::avahi::AvahiMdns::new(connection)
         .run(matter)
@@ -23,12 +24,9 @@ pub(crate) async fn run_mdns(matter: &Matter<'_>) -> Result<(), Error> {
 }
 
 #[cfg(feature = "builtin-mdns")]
-pub(crate) async fn run_mdns(matter: &Matter<'_>) -> Result<(), Error> {
+pub async fn run_mdns<C: Crypto>(matter: &Matter<'_>, crypto: C) -> Result<(), Error> {
     use nix::net::if_::InterfaceFlags;
     use nix::sys::socket::SockaddrIn6;
-    use rs_matter::crypto::default_crypto;
-    use rs_matter::dm::clusters::dev_att::DeviceAttestation;
-    use rs_matter::dm::devices::test::TEST_DEV_ATT;
     use rs_matter::error::ErrorCode;
     use rs_matter::transport::network::mdns::builtin::{BuiltinMdns, Host};
     use rs_matter::transport::network::mdns::{
@@ -37,8 +35,6 @@ pub(crate) async fn run_mdns(matter: &Matter<'_>) -> Result<(), Error> {
     use rs_matter::transport::network::{Ipv4Addr as MIpv4Addr, Ipv6Addr as MIpv6Addr};
     use socket2::{Domain, Protocol, Socket, Type};
     use std::net::UdpSocket as StdUdpSocket;
-
-    let crypto = default_crypto(rand::thread_rng(), TEST_DEV_ATT.dac_priv_key());
 
     let interfaces = || {
         nix::ifaddrs::getifaddrs().unwrap().filter(|ia| {
@@ -96,7 +92,7 @@ pub(crate) async fn run_mdns(matter: &Matter<'_>) -> Result<(), Error> {
             &Host {
                 hostname: "daikin-matter",
                 ip: ipv4_addr,
-                ipv6: ipv6_addr,
+                ipv6: &[ipv6_addr],
             },
             Some(ipv4_addr),
             Some(0),
