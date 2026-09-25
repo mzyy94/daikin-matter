@@ -10,14 +10,13 @@ use daikin_client::{Daikin, ReqwestClient};
 use dsiot::DaikinInfo;
 
 use embassy_futures::select::{select, select4};
-use static_cell::StaticCell;
 
 use rs_matter::crypto::{Crypto, CryptoSensitive, CryptoSensitiveRef, default_crypto};
 use rs_matter::dm::clusters::basic_info::BasicInfoConfig;
 use rs_matter::dm::clusters::desc::{self, ClusterHandler as _};
 use rs_matter::dm::devices::test::{DAC_PRIVKEY, TEST_DEV_ATT};
+use rs_matter::dm::networks::SysNetifs;
 use rs_matter::dm::networks::eth::EthNetwork;
-use rs_matter::dm::networks::unix::UnixNetifs;
 use rs_matter::dm::{Async, AttrChangeNotifier, DataModel, Dataver, Node, endpoints};
 use rs_matter::im::{EthInteractionModelState, InteractionModel};
 use rs_matter::pairing::{DiscoveryCapabilities, qr::QrTextType};
@@ -26,15 +25,12 @@ use rs_matter::respond::DefaultResponder;
 use rs_matter::sc::pase::MAX_COMM_WINDOW_TIMEOUT_SECS;
 use rs_matter::transport::MATTER_SOCKET_BIND_ADDR;
 use rs_matter::transport::exchange::MatterBuffers;
-use rs_matter::utils::init::InitMaybeUninit;
 use rs_matter::utils::select::Coalesce;
 use rs_matter::{MATTER_PORT, Matter};
 
 use crate::bridge::{self, BridgeHandler};
 use crate::mdns::run_mdns;
 use crate::{bridged_info, device, fan_control, humidity, onoff, power, thermostat};
-
-static MATTER: StaticCell<Matter> = StaticCell::new();
 
 const COMM_DATA: rs_matter::BasicCommData = rs_matter::BasicCommData {
     password: CryptoSensitive::new_from_ref(CryptoSensitiveRef::new(&20230420_u32.to_le_bytes())),
@@ -67,7 +63,7 @@ fn data_model<'a>(
     (
         node,
         endpoints::EthSysHandlerBuilder::new()
-            .netif_diag(&UnixNetifs)
+            .netif_diag(&SysNetifs)
             .build(rand)
             .chain(
                 |e, c| e == 1 && c == desc::DescHandler::CLUSTER.id,
@@ -82,12 +78,7 @@ pub(crate) fn run_matter(
     rt_handle: tokio::runtime::Handle,
     data_dir: PathBuf,
 ) -> anyhow::Result<()> {
-    let matter = MATTER.uninit().init_with(Matter::init(
-        &BRIDGE_DEV_DET,
-        COMM_DATA,
-        &TEST_DEV_ATT,
-        MATTER_PORT,
-    ));
+    let matter = Matter::new(&BRIDGE_DEV_DET, COMM_DATA, &TEST_DEV_ATT, MATTER_PORT);
 
     let store = DirKvBlobStore::new(data_dir);
     let kv = matter.kv(store);
@@ -130,7 +121,7 @@ pub(crate) fn run_matter(
     let node = bridge::build_node(&ep_devs);
 
     let im = InteractionModel::new(
-        matter,
+        &matter,
         &crypto,
         &buffers,
         data_model(rand, &bridge_handler, node),
@@ -146,7 +137,7 @@ pub(crate) fn run_matter(
 
     let socket = async_io::Async::<UdpSocket>::bind(MATTER_SOCKET_BIND_ADDR)?;
 
-    let mut mdns = pin!(run_mdns(matter, &crypto));
+    let mut mdns = pin!(run_mdns(&matter, &crypto));
     let mut transport = pin!(matter.run(&crypto, &socket, &socket, &socket));
 
     if !matter.has_fabrics() {
