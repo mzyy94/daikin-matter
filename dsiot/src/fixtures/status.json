@@ -2080,6 +2080,16 @@
                 ]
             },
             "rsc": 2000
+        },
+        {
+            "fr": "/dsiot/edge/adr_0100.i_power.week_power",
+            "pc": {},
+            "rsc": 4042
+        },
+        {
+            "fr": "/dsiot/edge/adr_0100.i_power.year_power",
+            "pc": {},
+            "rsc": 4042
         }
     ]
 }

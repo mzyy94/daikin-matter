@@ -141,11 +141,11 @@ impl From<DaikinResponse> for DaikinStatus {
             },
             power_consumption: get_prop!(response."/dsiot/edge/adr_0200.dgc_status".e_1003.e_A005.p_01),
             power_history: PowerHistory {
-                today_runtime: get_prop!(response."/dsiot/edge".adr_0100.i_power.week_power.today_runtime),
-                week: get_prop!(response."/dsiot/edge".adr_0100.i_power.week_power.datas),
-                week_alt: get_prop!(response."/dsiot/edge".adr_0100.i_power.week_power.datas2),
-                year_previous: get_prop!(response."/dsiot/edge".adr_0100.i_power.year_power.previous_year),
-                year_this: get_prop!(response."/dsiot/edge".adr_0100.i_power.year_power.this_year),
+                today_runtime: get_prop!(response."/dsiot/edge/adr_0100.i_power.week_power".today_runtime),
+                week: get_prop!(response."/dsiot/edge/adr_0100.i_power.week_power".datas),
+                week_alt: get_prop!(response."/dsiot/edge/adr_0100.i_power.week_power".datas2),
+                year_previous: get_prop!(response."/dsiot/edge/adr_0100.i_power.year_power".previous_year),
+                year_this: get_prop!(response."/dsiot/edge/adr_0100.i_power.year_power".this_year),
             },
         }
     }

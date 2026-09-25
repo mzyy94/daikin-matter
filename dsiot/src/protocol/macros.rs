@@ -99,6 +99,12 @@ mod tests {
             r#"Item { name: "p_03", value: 5.6, metadata: Binary(Step(BinaryStep { range: 0.0..=25.5, step: 0.1 })) }"#
         );
 
+        let p: Item = get_prop!(res."/dsiot/edge/adr_0100.i_power.week_power".data);
+        assert_eq!(
+            format!("{p:?}"),
+            r#"Item { name: "", value: Null, metadata: Undefined }"#
+        );
+
         let p: Item = get_prop!(res."/hoge".fuga.piyo);
         assert_eq!(
             format!("{p:?}"),
