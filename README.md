@@ -95,16 +95,16 @@ The bridge exposes the following Matter clusters for each air conditioner:
 | Target temperature (not available in Auto mode) | `Thermostat` | ✅ | ✅ |
 | Room temperature | `Thermostat` | ✅ | ✅ |
 | Outdoor temperature | `Thermostat` | ❌ | ✅ |
-| Fan speed | `FanControl` | ❌ | ✅ |
+| Fan speed | `FanControl` | ✅  | ✅ |
 | Swing (vertical/horizontal, toggles with auto) | `FanControl` | ❌ | ✅ |
 | Wind direction | (not in cluster) | ❌ | ❌ |
 | Humidity | `RelativeHumidityMeasurement` | ❌ | ✅ |
-| Power consumption (W) | `ElectricalPowerMeasurement` | ✅ (iOS 27+) | ✅ |
+| Power consumption (W) | `ElectricalPowerMeasurement` | ✅ | ✅ |
 | Wi-Fi signal strength (RSSI) | `WiFiNetworkDiagnostics` | ❌ | ❌ |
 
 Apple Home has limited support for Room Air Conditioner device type. Only basic thermostat and power controls are available. Home Assistant's Matter integration provides access to more features including fan control and sensor readings, but Fan/Dry modes are hidden by the vendor-level UI filtering.
 
-Tested with iOS 27 beta, Home Assistant 2026.4.3, and Daikin AC firmware 3.11.0.
+Tested with iOS 27.0, Home Assistant 2026.9.3, and Daikin AC firmware 3.15.0.
 
 ## Compatibility
 
